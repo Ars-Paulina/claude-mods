@@ -1,0 +1,10 @@
+{
+  "name": "npm-block",
+  "version": "0.1.0",
+  "description": "Rewrites npm to pnpm in Bash commands instead of blocking them",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/Ars-Paulina/claude-mods"
+}
