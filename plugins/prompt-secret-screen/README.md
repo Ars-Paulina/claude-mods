@@ -9,7 +9,7 @@ Port of the `UserPromptSubmit` hook `~/.claude/hooks/prompt-secret-screen.js`. T
 - Same credential kinds as the old hook: OpenAI, JWT, Telegram bot, Google OAuth secret, Supabase secret key and PAT, GitHub PAT, AWS key id, Slack token, Postgres URL with a password, hex32/hex64 next to a secret word, and a bare high-entropy paste.
 - Some rules differ from the old hook's, because a false positive now rewrites your prompt instead of only warning:
   - **OpenAI key:** the part after `sk-` must hold a digit and an uppercase letter, as random keys do. So `fix/task-queue-retry` and `desk-booking-widget.tsx` are left alone, while glued keys (`OPENAI_API_KEY=sk-…`, `--key-sk-proj-…`) are still caught.
-  - **JWT:** `eyJ` must not follow a letter or digit (`ID_TOKEN_eyJ…` is still caught). A short bounded prefix finds a start, then the match runs to the end of the token, so a long payload or signature is masked whole. The scan stays linear. The old regex was quadratic: a 300 KB run of `eyJ` took 28 s, past the hook's 10 s budget.
+  - **JWT:** `eyJ` must not follow a letter or digit (`ID_TOKEN_eyJ…` is still caught). A short fixed prefix finds a start, then the match runs to the end of the token, so a long header (an x5c certificate chain), payload or signature is masked whole. The scan stays linear. The old regex was quadratic: a 300 KB run of `eyJ` took 28 s, past the hook's 10 s budget.
   - **Hex32/hex64 keyword:** it needs a secret word within 40 characters. The word may be glued to a name before it (`accessToken`, `apiKey`, `SECRETKEY`, `API_KEY`), but may not run on into a lowercase word after it (`keyboard`, `tokenizer`).
   - **Hex32/hex64 in a file path:** a folder name in a file path is not masked, so cache folders survive. The rule only applies when the token really looks like a file path:
     - it starts with `/`, `~/`, `./` or `../`, or holds two or more `/`
@@ -17,6 +17,7 @@ Port of the `UserPromptSubmit` hook `~/.claude/hooks/prompt-secret-screen.js`. T
     - no secret word sits in it, so `/api/token/<hex>` is still masked
 
     `KEY=<hex>/` and `token <hex>/<hex>` are still masked.
+    A secret word anywhere in the path turns the rule off, so a hex folder under `keys/`, `secrets/` or `tokens/` is masked (`/etc/ssl/keys/<hex>.pem`). The old hook masked these too.
 - Once a value is detected, every copy of it in the prompt is masked, including a copy that would not pass a gate on its own.
 - Overlapping matches are merged and masked as one span, so no tail of either value is left showing.
 - Text over 1,000,000 characters is refused, not scanned. The cap keeps the scan far inside the hook budget: the worst inputs found take under 200 ms at the cap.
@@ -63,4 +64,4 @@ claude plugin test plugins/prompt-secret-screen
 node --no-warnings plugins/prompt-secret-screen/scripts/parity.mjs
 ```
 
-The second command runs the old hook (`~/.claude/hooks/prompt-secret-screen.js`, with `HOME` pointed at a temp folder) and the mod on 48 probes from three reviews. It checks two things: on every probe the mod catches at least what the old hook caught, except the intended false-positive fixes, which are listed with reasons. And no fake secret is left raw after masking. It skips itself when the old hook is not there.
+The second command runs the old hook (`~/.claude/hooks/prompt-secret-screen.js`, with `HOME` pointed at a temp folder) and the mod on 49 probes from four reviews. It checks two things: on every probe the mod catches at least what the old hook caught, except the intended false-positive fixes, which are listed with reasons. And no fake secret is left raw after masking. It skips itself when the old hook is not there.

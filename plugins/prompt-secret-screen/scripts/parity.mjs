@@ -32,6 +32,7 @@ const AKIA = 'AKIA' + 'ABCDEFGHIJKLMNOP'
 const STANDALONE = 'Qm9vT3Jx7Lp2Zk8Wn4Vt6Hs1'
 const [JH, JP, JS] = JWT.split('.')
 const LONG_JWT = [JH, JP + 'Ab9_'.repeat(5000), JS].join('.')
+const LONG_HDR_JWT = [JH + 'hbGciOiJSUzI1NiIsIng1YyI6'.repeat(20), JP, JS].join('.')
 const LONG_SIG_JWT = [JH, JP, JS + 'Zq7-'.repeat(500)].join('.')
 
 // [name, prompt, secrets that must not survive mask(), expectation]
@@ -83,6 +84,7 @@ const PROBES = [
   ['token <hex32>/<hex32>', `token ${HEX32}/${HEX64.slice(0, 32).split('').reverse().join('')}`, [HEX32]],
   ['secret word inside the path token', `cd /srv/api/token/${HEX32}/x`, [HEX32]],
   ['JWT with a 20 KB payload', `Bearer ${LONG_JWT}`, [LONG_JWT, LONG_JWT.slice(-40)]],
+  ['JWT with a 500-char header (x5c)', `Bearer ${LONG_HDR_JWT} done`, [LONG_HDR_JWT.slice(0, 40), LONG_HDR_JWT.slice(-40)]],
   ['JWT with a 2 KB signature', `Bearer ${LONG_SIG_JWT} done`, [LONG_SIG_JWT.slice(-40)]],
   ['telegram glued to OpenAI key', `1234567:${'Ab3'.repeat(11)}sk-Zx9Yw8Vu7Ts6Rq5Po4Nm3Lk2Jh1Gf`, ['Zx9Yw8Vu7Ts6Rq5Po4Nm3Lk2Jh1Gf', 'Ab3'.repeat(11)]],
 ]

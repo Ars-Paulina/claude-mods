@@ -250,6 +250,9 @@ test('review 3: a JWT with a long payload or signature is masked whole', () => {
   const longSig = [h, p, sig + 'Zq7-'.repeat(500)].join('.')
   expect(masks(`Bearer ${longPayload}`)).toBe('Bearer [secret masked: jwt]')
   expect(masks(`Bearer ${longSig}. done`)).toBe('Bearer [secret masked: jwt]. done')
+  // Review 4: a long header (x5c certificate chain in it) is caught too.
+  const longHeader = [h + 'hbGciOiJSUzI1NiIsIng1YyI6'.repeat(20), p, sig].join('.')
+  expect(masks(`Bearer ${longHeader} done`)).toBe('Bearer [secret masked: jwt] done')
 })
 
 test('review 3: many JWT-like starts in one run stay linear', () => {

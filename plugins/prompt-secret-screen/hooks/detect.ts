@@ -67,10 +67,11 @@ function pathChecker(text: string) {
 }
 
 // JWT: header.payload.signature, each base64url, the header starting "eyJ" (base64 of '{"').
-// A bounded prefix finds a start; the match then runs to the end of its run of base64url and dot
-// characters, so a long payload or signature is masked whole. After each start the scan jumps
-// past that run, so overlapping starts cost nothing (linear on any input).
-const JWT_START = /(?<![A-Za-z0-9])eyJ[A-Za-z0-9_-]{8,256}\.[A-Za-z0-9_-]{8}/g
+// A short fixed prefix finds a start; the match then runs to the end of its run of base64url and
+// dot characters, so a long header (x5c certificate chain), payload or signature is masked whole.
+// After each start the scan jumps past that run, so overlapping starts cost nothing (linear on
+// any input).
+const JWT_START = /(?<![A-Za-z0-9])eyJ[A-Za-z0-9_-]{8}/g
 const JWT_FULL = /^eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{6,}/
 const JWT_CHAR = /[A-Za-z0-9_.-]/
 function findJwts(text: string, add: (label: string, value: string, start: number) => void) {
