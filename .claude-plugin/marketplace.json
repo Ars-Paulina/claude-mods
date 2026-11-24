@@ -36,6 +36,12 @@
       "version": "0.1.0"
     },
     {
+      "name": "prompt-secret-screen",
+      "source": "./plugins/prompt-secret-screen",
+      "description": "Masks credential-shaped values in your prompt before it is stored or sent, and logs a redacted rotate-queue record",
+      "version": "0.1.0"
+    },
+    {
       "name": "secret-mask",
       "source": "./plugins/secret-mask",
       "description": "Masks secrets in tool results, hook context and attachments before the model or transcript sees them",
