@@ -48,6 +48,12 @@
       "version": "0.2.0"
     },
     {
+      "name": "statusline",
+      "source": "./plugins/statusline",
+      "description": "Status rows above the prompt (context fill, 5h and 7d limits, model, session, branch, turns, transcript, graft, project colour) plus the session files other tools read. Replaces a statusLine command.",
+      "version": "0.1.0"
+    },
+    {
       "name": "toggles",
       "source": "./plugins/toggles",
       "description": "Pane to turn plugins, skills and MCP servers on or off for this project",
