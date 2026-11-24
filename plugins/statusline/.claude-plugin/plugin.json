@@ -1,0 +1,37 @@
+{
+  "name": "statusline",
+  "version": "0.1.0",
+  "description": "Status rows above the prompt (context fill, 5h and 7d limits, model, session, branch, turns, transcript, graft, project colour) plus the session files other tools read. Replaces a statusLine command.",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/Ars-Paulina/claude-mods",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Show the status rows",
+      "description": "Kill switch. Off draws nothing and writes nothing.",
+      "default": true
+    },
+    "claudeDir": {
+      "type": "string",
+      "title": "Claude config folder",
+      "description": "Where the rate-limit cache, usage-limits cache, refresh script and project-colors.json live. ~ is your home.",
+      "default": "~/.claude"
+    },
+    "snapshotDir": {
+      "type": "string",
+      "title": "Snapshot folder",
+      "description": "Each session writes <session id>.json here (rendered rows + raw numbers) every 30 seconds and after each turn, for other tools to read. Empty turns it off.",
+      "default": "~/.claude/hermes/statusline"
+    },
+    "legacyFiles": {
+      "type": "boolean",
+      "title": "Write the files the old status line wrote",
+      "description": "<config>/cache/rate-limits/<session>.json (auto-resume supervisor), /tmp/claude-ctx-<session>.json (context monitor), and kick the usage-limits refresh script. Off if you do not run those tools.",
+      "default": true
+    }
+  }
+}
