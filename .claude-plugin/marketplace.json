@@ -18,6 +18,12 @@
       "version": "0.1.0"
     },
     {
+      "name": "npm-block",
+      "source": "./plugins/npm-block",
+      "description": "Rewrites npm to pnpm in Bash commands instead of blocking them",
+      "version": "0.1.0"
+    },
+    {
       "name": "pendings-band",
       "source": "./plugins/pendings-band",
       "description": "One line above the prompt with the next ready pending for the project you are in, read from a local goal ledger (bundled goals.py). Read only.",
@@ -27,6 +33,12 @@
       "name": "prompt-index",
       "source": "./plugins/prompt-index",
       "description": "A pane listing your prompts; Enter scrolls the chat to that prompt",
+      "version": "0.1.0"
+    },
+    {
+      "name": "secret-mask",
+      "source": "./plugins/secret-mask",
+      "description": "Masks secrets in tool results, hook context and attachments before the model or transcript sees them",
       "version": "0.1.0"
     },
     {
