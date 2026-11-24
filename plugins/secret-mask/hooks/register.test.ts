@@ -11,7 +11,7 @@ const hex = async (s: string) =>
   [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, '0')).join('')
 const fpJson = async (v: string, name: string) => JSON.stringify({ fingerprints: [{ name, sha256: await hex(v), len: v.length }] })
 
-type Opts = { throwEnv?: boolean; off?: boolean; files?: { name: string; mtimeMs: number; text: string }[]; toasts?: string[]; toolResult?: unknown }
+type Opts = { throwEnv?: boolean; off?: boolean; files?: { name: string; mtimeMs: number; text: string }[]; toasts?: string[]; toolResult?: unknown; toolAnswer?: unknown }
 
 function engine(on: any, o: Opts = {}) {
   on('env.get', (_: any, e: any) => {
@@ -21,7 +21,7 @@ function engine(on: any, o: Opts = {}) {
   on('fs.list', () => ({ value: (o.files ?? []).map((f) => ({ name: f.name, kind: 'file', size: 1, mtimeMs: f.mtimeMs, isLink: false })) }))
   on('fs.read', (_: any, e: any) => ({ value: (o.files ?? []).find((f) => e.path.endsWith(f.name))?.text ?? '' }))
   on('ui.toast', (_: any, e: any) => { o.toasts?.push(e.text); return { value: undefined } })
-  on('tool.call', () => ({ result: o.toolResult ?? { stdout: 'hello', stderr: '', interrupted: false, isImage: false } }))
+  on('tool.call', () => o.toolAnswer ?? { result: o.toolResult ?? { stdout: 'hello', stderr: '', interrupted: false, isImage: false } })
 }
 
 const text = (t: string) => ({ type: 'text', text: t })
@@ -128,6 +128,39 @@ test('tool.call throw path: result withheld (deny)', async ($, on) => {
   engine(on, { throwEnv: true, toolResult: { stdout: GH, stderr: '' } })
   const r: any = await $.tool.call({ tool: 'Bash', command: 'x' } as any)
   expect(JSON.stringify(r)).not.toContain(GH)
+})
+
+test('tool.call: errored result with a secret is answered with its masked error text', async ($, on) => {
+  engine(on, { toolAnswer: { isError: true, text: `Exit code 1\nfatal ${GH}`, result: `Exit code 1\nfatal ${GH}` } })
+  const r: any = await $.tool.call({ tool: 'Bash', command: 'x' } as any)
+  expect(JSON.stringify(r)).not.toContain(GH)
+  expect(r.deny).toContain('Exit code 1')
+})
+
+test('tool.call: PDF base64 over 2 MB is kept whole; other strings still masked', async ($, on) => {
+  const big = 'JVBERi0x' + 'A'.repeat(2 * 1024 * 1024 + 16)
+  engine(on, { toolResult: { type: 'pdf', file: { filePath: '/x.pdf', base64: big, originalSize: 1, note: `cfg ${GH}` } } })
+  const r: any = await $.tool.call({ tool: 'Read', file_path: '/x.pdf' } as any)
+  expect(r.result.file.base64 === big).toBe(true)
+  expect(r.result.file.note).not.toContain(GH)
+})
+
+test('tool.call: page base64 with a key-shaped run is not rewritten', async ($, on) => {
+  const akid = 'JVBERi0x/AKIA' + 'B'.repeat(16) + '/QUJD'
+  engine(on, { toolResult: { type: 'parts', file: { filePath: '/x.pdf', originalSize: 1, count: 1, outputDir: '/o', parts: [{ base64: akid, page: 1 }] } } })
+  const r: any = await $.tool.call({ tool: 'Read', file_path: '/x.pdf' } as any)
+  expect(r.result.file.parts[0].base64).toBe(akid)
+})
+
+test('tool.call: repeated failure denies every call, says it already ran, one toast', async ($, on) => {
+  const toasts: string[] = []
+  engine(on, { throwEnv: true, toasts, toolResult: { stdout: GH, stderr: '' } })
+  for (let i = 0; i < 3; i++) {
+    const r: any = await $.tool.call({ tool: 'Bash', command: 'git push' } as any)
+    expect(JSON.stringify(r)).not.toContain(GH)
+    expect(r.deny).toContain('already ran')
+  }
+  expect(toasts.length).toBe(1)
 })
 
 test('throw path fails closed for block and string content; one toast for many rows', async ($, on) => {

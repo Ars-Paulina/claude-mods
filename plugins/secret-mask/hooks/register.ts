@@ -8,6 +8,8 @@ const WITHHELD = '[MASKED: secret-mask failed on this row, content withheld]'
 const NOTICE = 'secret-mask: secret value(s) in this tool output were replaced with [MASKED:…]. ' +
   'Never try to print, decode or unmask them; check secrets by length or presence only.'
 const FAILED = 'secret-mask failed and is withholding rows; check `claude --debug`'
+const TOOL_FAILED = 'the tool already ran, but secret-mask could not check its output for secrets, so the output was withheld. ' +
+  'Do not run it again; tell the user secret-mask is failing.'
 const DROPPED = (kind: string) => `[MASKED: a ${kind} block held a secret and was removed]`
 
 type Block = { type: string; [k: string]: unknown }
@@ -49,7 +51,9 @@ async function maskDeep(v: unknown, fp: Fingerprints, hits: Hit[]): Promise<unkn
     const o = v as Record<string, unknown>
     if (o.type === 'image' || o.type === 'base64') return v // masking would destroy the bytes
     const out: Record<string, unknown> = Object.create(null) // keeps a "__proto__" key as data
-    for (const [k, x] of Object.entries(o)) out[k] = await maskDeep(x, fp, hits)
+    // A Read of a PDF or its pages carries the bytes as `base64` (`{ type: 'pdf', file: { base64 } }`,
+    // `parts: [{ base64 }]`): scanning them would corrupt the file, and a shape match there is noise.
+    for (const [k, x] of Object.entries(o)) out[k] = k === 'base64' && typeof x === 'string' ? x : await maskDeep(x, fp, hits)
     return out
   }
   return v
@@ -129,15 +133,24 @@ export const register: Register = (on) => {
   // tool_result, and only a tool.call answer replaces it. Core re-maps our { result } for the model.
   on('tool.call', async ($, e, next) => {
     const r: any = await next(e)
-    if (!r || r.deny !== undefined || r.isError || r.result == null || (r.result as any).isImage) return r
+    if (!r || r.deny !== undefined) return r
     if (await isOff($)) return r
+    if (r.isError) {
+      // An errored call's transcript copy is its error text (a failed `cat .env; false`, a psql DSN):
+      // answer with a deny carrying the masked text, so the model still reads the error.
+      if (typeof r.text !== 'string') return r
+      const m = await maskString(r.text, await fingerprints($))
+      return m.hits.length ? { deny: m.text } : r
+    }
+    if (r.result == null || (r.result as any).isImage) return r
     const hits: Hit[] = []
     const result = await maskDeep(r.result, await fingerprints($), hits)
     if (!hits.length) return r
     return { result, context: [...(r.context ?? []), NOTICE] }
   }).catch(async ($, _e, _next) => {
     if (!warned) { warned = true; try { await $.ui.toast(FAILED) } catch { /* the withhold still stands */ } }
-    return { deny: 'secret-mask failed while checking this result for secrets, so it was withheld' }
+    // The tool has already run (next comes first), so say so: a retry would repeat its side effects.
+    return { deny: TOOL_FAILED }
   })
 
   // Model copy: every stored row, including the doors tool.call never sees.
