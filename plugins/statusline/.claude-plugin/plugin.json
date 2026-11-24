@@ -1,0 +1,25 @@
+{
+  "name": "statusline",
+  "version": "0.1.0",
+  "description": "Status rows above the prompt (context fill, 5h and 7d limits, model, session, branch, turns) plus a per-session snapshot file other tools can read. Replaces a statusLine command.",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/Ars-Paulina/claude-mods",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Show the status rows",
+      "description": "Kill switch. Off draws nothing and writes nothing.",
+      "default": true
+    },
+    "snapshotDir": {
+      "type": "string",
+      "title": "Snapshot folder",
+      "description": "Each session writes <session id>.json here (rendered line + raw numbers) every 30 seconds, for other tools to read. Empty turns it off. ~ is your home.",
+      "default": ""
+    }
+  }
+}
