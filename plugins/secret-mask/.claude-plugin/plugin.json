@@ -1,0 +1,10 @@
+{
+  "name": "secret-mask",
+  "version": "0.1.0",
+  "description": "Masks secrets in tool results, hook context and attachments before the model or transcript sees them",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/Ars-Paulina/claude-mods"
+}
