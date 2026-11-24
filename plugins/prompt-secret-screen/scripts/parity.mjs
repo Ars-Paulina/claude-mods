@@ -30,6 +30,9 @@ const TG = '123456789:' + 'AAH' + 'x9Yw8Vu7Ts6Rq5Po4Nm3Lk2Jh1Gf5Ed4Cb'.slice(0, 
 const SB = 'sb_secret_' + 'Ab12Cd34Ef56Gh78Ij90'
 const AKIA = 'AKIA' + 'ABCDEFGHIJKLMNOP'
 const STANDALONE = 'Qm9vT3Jx7Lp2Zk8Wn4Vt6Hs1'
+const [JH, JP, JS] = JWT.split('.')
+const LONG_JWT = [JH, JP + 'Ab9_'.repeat(5000), JS].join('.')
+const LONG_SIG_JWT = [JH, JP, JS + 'Zq7-'.repeat(500)].join('.')
 
 // [name, prompt, secrets that must not survive mask(), expectation]
 // expectation: 'superset' (default) or a reason string = intended difference (old hit is a false positive).
@@ -76,6 +79,11 @@ const PROBES = [
   ['--key-<sk-proj>', `run tool --key-${PROJ} now`, [PROJ]],
   ['OPENAI<sk-proj> glued', `paste OPENAI${PROJ} here`, [PROJ]],
   ['cron hex in URL path', `curl https://app.example.com/api/cron/${HEX32}?token=1`, [HEX32]],
+  ['KEY=<hex32>/ (one slash, not a path)', `KEY=${HEX32}/`, [HEX32]],
+  ['token <hex32>/<hex32>', `token ${HEX32}/${HEX64.slice(0, 32).split('').reverse().join('')}`, [HEX32]],
+  ['secret word inside the path token', `cd /srv/api/token/${HEX32}/x`, [HEX32]],
+  ['JWT with a 20 KB payload', `Bearer ${LONG_JWT}`, [LONG_JWT, LONG_JWT.slice(-40)]],
+  ['JWT with a 2 KB signature', `Bearer ${LONG_SIG_JWT} done`, [LONG_SIG_JWT.slice(-40)]],
   ['telegram glued to OpenAI key', `1234567:${'Ab3'.repeat(11)}sk-Zx9Yw8Vu7Ts6Rq5Po4Nm3Lk2Jh1Gf`, ['Zx9Yw8Vu7Ts6Rq5Po4Nm3Lk2Jh1Gf', 'Ab3'.repeat(11)]],
 ]
 
@@ -83,7 +91,12 @@ const home = mkdtempSync(join(tmpdir(), 'pss-parity-'))
 function oldLabels(prompt) {
   const env = { ...process.env, HOME: home, USERPROFILE: home }
   delete env.ECOSYSTEM_SECRET_SCREEN
-  const r = spawnSync(process.execPath, [OLD], { input: JSON.stringify({ prompt, session_id: 'parity' }), env, encoding: 'utf8' })
+  const r = spawnSync(process.execPath, [OLD], { input: JSON.stringify({ prompt, session_id: 'parity' }), env, encoding: 'utf8', maxBuffer: 1 << 26 })
+  if (r.status !== 0) {
+    // A broken old hook must fail this check, never pass it by finding nothing.
+    console.log(`FAIL old hook exited ${r.status ?? r.signal}: ${(r.stderr || '').trim().slice(0, 200)}`)
+    process.exit(1)
+  }
   if (!r.stdout.trim()) return []
   const ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext
   return ctx.match(/\[([^\]]*)\]/)[1].split(', ')
@@ -96,6 +109,9 @@ for (const [name, prompt, secrets, intended] of PROBES) {
   const mine = [...new Set(hits.map(h => h.label))]
   const out = mask(prompt, hits)
   const problems = []
+  // A probe with secrets is a known positive: the old hook staying silent means it is broken or
+  // not the hook this check is for (parity.mjs /dev/null), so the check fails closed.
+  if (secrets.length && !old.length && !name.includes('(both miss)')) problems.push('old hook found nothing on a known positive')
   if (!intended) {
     const missing = old.filter(l => !mine.includes(l))
     if (missing.length) problems.push(`old caught [${missing}] the mod missed`)

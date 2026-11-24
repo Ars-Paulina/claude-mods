@@ -32,7 +32,7 @@ const isOff = async ($: Engine) => ((await $.env.get('ECOSYSTEM_SECRET_SCREEN'))
 
 // Longer text is refused, not scanned: scan time must stay far inside the hook budget, because a
 // screen that overruns it with no time left for .catch would let the prompt through unscreened.
-// About 250k tokens, past any context window, so no real prompt is lost.
+// Such a prompt is dropped with the TOO_LONG message, never sent.
 export const MAX_SCAN = 1_000_000
 const TOO_LONG = `prompt-secret-screen: this text is over ${MAX_SCAN} characters, too long to screen for secrets, so it was not sent. Split it, or turn the mod off with /plugin.`
 

@@ -8,11 +8,10 @@ export type Hit = { label: string; value: string; ranges: [number, number][] }
 // Differences from the old hook, each because a false positive now rewrites the prompt:
 // - openai_key: the part after `sk-` must hold a digit and an uppercase letter (isKeyLike), so
 //   "task-queue-retry" and "desk-booking-widget" are not keys; real keys are random base62.
-// - jwt: `eyJ` must not follow a letter or digit, and each part is bounded. The old regex was
-//   quadratic on runs of "eyJ" (300 KB took 28 s, past the hook budget).
+// - jwt: found by findJwts below, not by a regex here. The old regex was quadratic on runs of
+//   "eyJ" (300 KB took 28 s, past the hook budget).
 const PATTERNS: [string, RegExp][] = [
   ['openai_key', /sk-(?:proj-)?[A-Za-z0-9_-]{20,}/],
-  ['jwt', /(?<![A-Za-z0-9])eyJ[A-Za-z0-9_-]{8,256}\.[A-Za-z0-9_-]{8,16384}\.[A-Za-z0-9_-]{6,1024}/],
   ['telegram_bot', /\b\d{6,12}:[A-Za-z0-9_-]{35}\b/],
   ['google_oauth_secret', /GOCSPX-[A-Za-z0-9_-]{20,}/],
   ['supabase_secret_key', /sb_secret_[A-Za-z0-9]{16,}/],
@@ -44,12 +43,14 @@ function hasKeyword(window: string): boolean {
   return false
 }
 
-// A file path segment (/tmp/x/<hex>/y) is a folder name, not a secret. A URL path is not exempt:
-// https://app/api/cron/<hex> is how cron secrets travel. "Token" here = the run between spaces
-// or quotes. Matches come in order, so each token is measured once (a 1 MB path stays linear).
+// A folder name in a file path (/tmp/x/<hex>/y) is not a secret. "Token" here = the run between
+// spaces or quotes. A token counts as a file path only when it looks like one: it starts with
+// /, ~/, ./ or ../, or holds 2+ slashes; it is no URL (https://app/api/cron/<hex> is how cron
+// secrets travel); and no secret word sits in it (KEY=<hex>/, /api/token/<hex>).
+// Matches come in order, so each token is measured once (a 1 MB path stays linear).
 const STOP = /[\s"'`<>()]/
 function pathChecker(text: string) {
-  let token = { a: -1, b: -1, isUrl: false }
+  let token = { a: -1, b: -1, isPath: false }
   return (start: number, end: number): boolean => {
     if (text[start - 1] !== '/' && text[end] !== '/') return false
     if (start < token.a || start >= token.b) {
@@ -57,9 +58,29 @@ function pathChecker(text: string) {
       let b = end
       while (a > 0 && !STOP.test(text[a - 1]!)) a--
       while (b < text.length && !STOP.test(text[b]!)) b++
-      token = { a, b, isUrl: text.slice(a, b).includes('://') }
+      const t = text.slice(a, b)
+      const looksLikePath = /^(?:~|\.{1,2})?\//.test(t) || (t.match(/\//g)?.length ?? 0) >= 2
+      token = { a, b, isPath: looksLikePath && !t.includes('://') && !hasKeyword(t) }
     }
-    return !token.isUrl
+    return token.isPath
+  }
+}
+
+// JWT: header.payload.signature, each base64url, the header starting "eyJ" (base64 of '{"').
+// A bounded prefix finds a start; the match then runs to the end of its run of base64url and dot
+// characters, so a long payload or signature is masked whole. After each start the scan jumps
+// past that run, so overlapping starts cost nothing (linear on any input).
+const JWT_START = /(?<![A-Za-z0-9])eyJ[A-Za-z0-9_-]{8,256}\.[A-Za-z0-9_-]{8}/g
+const JWT_FULL = /^eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{6,}/
+const JWT_CHAR = /[A-Za-z0-9_.-]/
+function findJwts(text: string, add: (label: string, value: string, start: number) => void) {
+  JWT_START.lastIndex = 0
+  for (let m = JWT_START.exec(text); m; m = JWT_START.exec(text)) {
+    let end = m.index + m[0].length
+    while (end < text.length && JWT_CHAR.test(text[end]!)) end++
+    const run = text.slice(m.index, end)
+    if (JWT_FULL.test(run)) add('jwt', run.replace(/[.]+$/, ''), m.index)
+    JWT_START.lastIndex = end
   }
 }
 
@@ -112,6 +133,7 @@ export function detect(text: string): Hit[] {
     }
   }
   scan(PATTERNS, (start, end, value) => !value.startsWith('sk-') || isKeyLike(value))
+  findJwts(text, add)
   const isPathSegment = pathChecker(text)
   scan(HEX, (start, end) => !isPathSegment(start, end) && hasKeyword(text.slice(Math.max(0, start - NEAR), end + NEAR)))
   const t = text.trim()

@@ -233,3 +233,28 @@ test('review 2: 1 MB adversarial inputs each scan + mask in under 1 s', () => {
     expect(Date.now() - t0).toBeLessThan(1_000)
   }
 })
+
+test('review 3: hex next to one slash is not a file path; secret word in the path token counts', () => {
+  const rev = HEX32.split('').reverse().join('')
+  expect(masks(`KEY=${HEX32}/`)).not.toContain(HEX32)
+  expect(masks(`token ${HEX32}/${rev}`)).not.toContain(HEX32)
+  expect(masks(`token ${HEX32}/${rev}`)).not.toContain(rev)
+  expect(masks(`cd /srv/api/token/${HEX32}/x`)).not.toContain(HEX32)
+  // Still a real file path: left alone.
+  expect(masks(`the token cache is in ./cache/${HEX32}/data`)).toContain(HEX32)
+})
+
+test('review 3: a JWT with a long payload or signature is masked whole', () => {
+  const [h, p, sig] = JWT.split('.')
+  const longPayload = [h, p + 'Ab9_'.repeat(5000), sig].join('.')
+  const longSig = [h, p, sig + 'Zq7-'.repeat(500)].join('.')
+  expect(masks(`Bearer ${longPayload}`)).toBe('Bearer [secret masked: jwt]')
+  expect(masks(`Bearer ${longSig}. done`)).toBe('Bearer [secret masked: jwt]. done')
+})
+
+test('review 3: many JWT-like starts in one run stay linear', () => {
+  const t0 = Date.now()
+  masks('_eyJAAAAAAAA.BBBBBBBB'.repeat(1_000_000 / 21))
+  masks(('_eyJ' + 'A'.repeat(250) + '.' + 'B'.repeat(8)).repeat(1_000_000 / 263))
+  expect(Date.now() - t0).toBeLessThan(1_000)
+})
