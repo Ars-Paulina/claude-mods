@@ -2,7 +2,7 @@
 
 Replaces secrets with `[MASKED:<label>]` before they are stored. It works in two places:
 
-- **The tool's result** (`tool.call`): the tool's structured record, the copy the transcript keeps as `toolUseResult` (Bash `stdout`/`stderr`, a Read's file text, an MCP result). The engine re-maps the masked record for the model. An errored call (non-zero exit, a failed `psql` printing a DSN) is answered with its masked error text, so the model still reads the error. Both the error text and the stored error result are scanned, and the longer masked one is sent.
+- **The tool's result** (`tool.call`): the tool's structured record, the copy the transcript keeps as `toolUseResult` (Bash `stdout`/`stderr`, a Read's file text, an MCP result). The engine re-maps the masked record for the model. An errored call (non-zero exit, a failed `psql` printing a DSN) is answered with its masked error text, so the model still reads the error. Both the error text and the stored error result are scanned (a non-string result, such as blocks or an object, is masked deep and sent as JSON), and the longer masked one is sent.
 - **Every stored row** (`session.append`): tool results, hook context, attachments, deliveries, notes, compaction summaries, notices, `!` command output and the model's own replies.
 
 ## Install
@@ -20,7 +20,7 @@ Four layers, in this order (ported from the `secret-mask.js` PostToolUse hook, l
 3. **Key-name context.** `NAME=value`, `"name": "value"`, `name: value` where the name looks secret (`*_PASSWORD*`, `*_SECRET`, `*_API_KEY`, …) and the value looks literal.
 4. **URL and header passwords.** `scheme://user:PASSWORD@host`, `?password=…`, `Bearer …`.
 
-Strings over 2 MB are withheld whole. Images and any `base64` field whose value looks like base64 (a Read of a PDF or its pages) are left as they are; text under a `base64` key is still scanned, so the bytes are never corrupted. Inside a tool result, a `document` or `search_result` block that holds a secret is swapped for a one-line text placeholder, because the engine does not keep a changed one.
+Strings over 2 MB are withheld whole. Images and any `base64` field whose value looks like file bytes (256+ characters of standard or URL-safe base64, no spaces: a Read of a PDF or its pages) are left as they are; text or a lone token under a `base64` key is still scanned, so the bytes are never corrupted. Inside a tool result, a `document` or `search_result` block that holds a secret is swapped for a one-line text placeholder, because the engine does not keep a changed one.
 
 ## Why a mod (the gain over the hook)
 
@@ -43,7 +43,7 @@ Headless sessions with only the mod, run on commit `ef59205` (`claude -p --setti
 | `79e2c731` (control) | `SECRET_MASK=off` | succeeds | 1 | 0 | `stdout`: raw token |
 | `587bb49b` | on | fails (`; false`) | 0 | 1 | `Error: Exit code 1\n[MASKED:github_token]` |
 
-Old hook absent from the masked runs: 0 lines for either session in `~/.claude/logs/secret-mask.log` (its last entry predates the runs), and no `1 secret value(s)` notice in their `.jsonl`.
+Old hook absent from the masked runs: none of the 3 `.jsonl` files holds the old hook's notice (`secret-mask: <number> secret value(s)…`, always with a count). The two `secret value(s)` lines in `0bb828bb` are the mod's own notice, which has no count.
 
 ## Fails closed
 
