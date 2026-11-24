@@ -4,7 +4,7 @@
 //   node toggle.mjs set <projectDir> <plugin|skill|mcp> <name> <on|off>
 // Every write is project-scoped: <projectDir>/.claude/settings.local.json, or this
 // project's own entry in ~/.claude.json. User-scope files are never written.
-import { readFileSync, writeFileSync, renameSync, copyFileSync, existsSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, renameSync, copyFileSync, existsSync, readdirSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -14,13 +14,38 @@ const CLAUDE_JSON = join(HOME, '.claude.json')
 
 const readJson = (p, fallback = {}) => (existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : fallback)
 
-// Temp file + rename so a reader never sees half a file; re-parse before swapping in.
+// Temp file (unique per process) + rename, so a reader never sees half a file.
 function writeJsonAtomic(p, obj) {
   const text = JSON.stringify(obj, null, 2) + '\n'
-  JSON.parse(text)
-  const tmp = `${p}.toggles-tmp`
-  writeFileSync(tmp, text, { mode: 0o600 })
-  renameSync(tmp, p)
+  const tmp = `${p}.toggles-${process.pid}-${Date.now()}.tmp`
+  try {
+    writeFileSync(tmp, text, { mode: 0o600 })
+    renameSync(tmp, p)
+  } finally {
+    rmSync(tmp, { force: true })
+  }
+}
+
+// Read-modify-write under a lock directory, so two sessions toggling at once
+// can't drop each other's change. A lock older than 10 s is a crashed writer's.
+function updateJson(p, change) {
+  const lock = `${p}.toggles-lock`
+  const deadline = Date.now() + 5000
+  for (;;) {
+    try { mkdirSync(lock); break } catch (err) {
+      if (err.code !== 'EEXIST') throw err
+      try { if (Date.now() - statSync(lock).mtimeMs > 10_000) { rmSync(lock, { recursive: true, force: true }); continue } } catch {}
+      if (Date.now() > deadline) throw new Error(`${p} is locked by another toggle (remove ${lock} if no toggle is running)`)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+    }
+  }
+  try {
+    const obj = readJson(p)
+    change(obj)
+    writeJsonAtomic(p, obj)
+  } finally {
+    rmSync(lock, { recursive: true, force: true })
+  }
 }
 
 const localSettingsPath = dir => join(dir, '.claude', 'settings.local.json')
@@ -85,10 +110,9 @@ const SKILL_STATES = ['on', 'name-only', 'user-invocable-only', 'off']
 
 function setSkill(dir, name, value) {
   if (!SKILL_STATES.includes(value)) throw new Error(`skill state must be one of ${SKILL_STATES.join(', ')}`)
-  const p = localSettingsPath(dir)
-  const s = readJson(p)
-  s.skillOverrides = { ...s.skillOverrides, [name]: value }
-  writeJsonAtomic(p, s)
+  updateJson(localSettingsPath(dir), s => {
+    s.skillOverrides = { ...s.skillOverrides, [name]: value }
+  })
 }
 
 function setMcp(dir, name, on) {
@@ -96,22 +120,21 @@ function setMcp(dir, name, on) {
   const flip = (list = []) => (on ? list.filter(n => n !== name) : [...new Set([...list, name])])
   if (isJson) {
     // .mcp.json servers are switched in the project's own local settings file.
-    const p = localSettingsPath(dir)
-    const s = readJson(p)
-    s.disabledMcpjsonServers = flip(s.disabledMcpjsonServers)
-    if (on && s.enabledMcpjsonServers && !s.enableAllProjectMcpServers)
-      s.enabledMcpjsonServers = [...new Set([...s.enabledMcpjsonServers, name])]
-    writeJsonAtomic(p, s)
+    updateJson(localSettingsPath(dir), s => {
+      s.disabledMcpjsonServers = flip(s.disabledMcpjsonServers)
+      if (on && s.enabledMcpjsonServers && !s.enableAllProjectMcpServers)
+        s.enabledMcpjsonServers = [...new Set([...s.enabledMcpjsonServers, name])]
+    })
     return
   }
-  // ~/.claude.json is shared by every session: back up, re-read right before the
-  // write, touch only this project's entry. ponytail: last-writer-wins against a
-  // session writing in the same instant; a file lock if that ever bites.
+  // ~/.claude.json is shared by every session: back up, then change only this
+  // project's entry under the lock. ponytail: Claude Code itself doesn't take this
+  // lock, so a write it makes in the same instant can still win.
   copyFileSync(CLAUDE_JSON, `${CLAUDE_JSON}.toggles-bak`)
-  const cj = readJson(CLAUDE_JSON)
-  if (!cj.projects?.[dir]) throw new Error(`no entry for ${dir} in ~/.claude.json`)
-  cj.projects[dir].disabledMcpServers = flip(cj.projects[dir].disabledMcpServers)
-  writeJsonAtomic(CLAUDE_JSON, cj)
+  updateJson(CLAUDE_JSON, cj => {
+    if (!cj.projects?.[dir]) throw new Error(`no entry for ${dir} in ~/.claude.json`)
+    cj.projects[dir].disabledMcpServers = flip(cj.projects[dir].disabledMcpServers)
+  })
 }
 
 function setPlugin(dir, name, on) {
