@@ -1,0 +1,10 @@
+{
+  "name": "rule-router",
+  "version": "0.1.0",
+  "description": "Keyword-matched rules from ~/.claude/rules-recall/*.md, attached to the prompt as hidden context once per session",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/Ars-Paulina/claude-mods"
+}

@@ -30,6 +30,12 @@
       "version": "0.1.0"
     },
     {
+      "name": "rule-router",
+      "source": "./plugins/rule-router",
+      "description": "Keyword-matched rules from ~/.claude/rules-recall/*.md, attached to the prompt as hidden context once per session",
+      "version": "0.1.0"
+    },
+    {
       "name": "session-board",
       "source": "./plugins/session-board",
       "description": "One calm card above the prompt: what this session is about, whose turn it is, what is pending and the next step",
