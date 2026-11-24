@@ -12,7 +12,9 @@ const TOOL_FAILED = 'the tool already ran, but secret-mask could not check its o
   'Do not run it again; tell the user secret-mask is failing.'
 const DROPPED = (kind: string) => `[MASKED: a ${kind} block held a secret and was removed]`
 
-const BASE64 = /^[A-Za-z0-9+/=\s]+$/
+// File bytes: long (a lone token is short), std or url alphabet, line breaks, no spaces.
+const BASE64 = /^[A-Za-z0-9+/_\-\r\n]+={0,2}$/
+const isBytes = (x: string) => x.length >= 256 && BASE64.test(x)
 
 type Block = { type: string; [k: string]: unknown }
 
@@ -55,8 +57,8 @@ async function maskDeep(v: unknown, fp: Fingerprints, hits: Hit[]): Promise<unkn
     const out: Record<string, unknown> = Object.create(null) // keeps a "__proto__" key as data
     // A Read of a PDF or its pages carries the bytes as `base64` (`{ type: 'pdf', file: { base64 } }`,
     // `parts: [{ base64 }]`): scanning them would corrupt the file, and a shape match there is noise.
-    // Only a value that looks like base64 is skipped; text under that key is still scanned.
-    for (const [k, x] of Object.entries(o)) out[k] = k === 'base64' && typeof x === 'string' && BASE64.test(x) ? x : await maskDeep(x, fp, hits)
+    // Only a value that looks like file bytes is skipped; text or a lone token under that key is still scanned.
+    for (const [k, x] of Object.entries(o)) out[k] = k === 'base64' && typeof x === 'string' && isBytes(x) ? x : await maskDeep(x, fp, hits)
     return out
   }
   return v
@@ -142,11 +144,16 @@ export const register: Register = (on) => {
       // An errored call's transcript copy is its error text (a failed `cat .env; false`, a psql DSN):
       // answer with a deny carrying the masked text, so the model still reads the error.
       // Both are scanned: `result` is what the transcript stores and may hold more than `text`.
+      // A non-string result (blocks, an object) is masked deep and sent as JSON.
       const fp = await fingerprints($)
-      const found = []
-      for (const s of [r.text, r.result]) if (typeof s === 'string') found.push(await maskString(s, fp))
-      if (!found.some((m) => m.hits.length)) return r
-      return { deny: found.reduce((a, b) => (b.text.length > a.text.length ? b : a)).text }
+      const hits: Hit[] = []
+      const found: string[] = []
+      for (const s of [r.text, r.result]) {
+        if (typeof s === 'string') found.push(String(await maskDeep(s, fp, hits)))
+        else if (s != null) found.push(JSON.stringify(await maskDeep(s, fp, hits)))
+      }
+      if (!hits.length) return r
+      return { deny: found.reduce((a, b) => (b.length > a.length ? b : a)) }
     }
     if (r.result == null || (r.result as any).isImage) return r
     const hits: Hit[] = []

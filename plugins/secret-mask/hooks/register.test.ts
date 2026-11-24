@@ -157,6 +157,38 @@ test('tool.call: text under a base64 key is still scanned (M3)', async ($, on) =
   expect(JSON.stringify(r)).not.toContain(GH)
 })
 
+test('tool.call: errored non-string result (blocks, object) is masked (P4, P5)', async ($, on) => {
+  const o: Opts = {}
+  engine(on, o)
+  for (const result of [[{ type: 'text', text: `x ${GH}` }], { error: `x ${GH}` }]) {
+    o.toolAnswer = { isError: true, text: 'Error', result }
+    const r: any = await $.tool.call({ tool: 'Bash', command: 'x' } as any)
+    expect(JSON.stringify(r)).not.toContain(GH)
+    expect(r.deny).toContain('[MASKED:github_token]')
+  }
+})
+
+test('tool.call: a lone key or text made of base64 letters under base64 is masked (P6, P7)', async ($, on) => {
+  const akia = 'AKIA' + 'B'.repeat(16)
+  const o: Opts = {}
+  engine(on, o)
+  for (const v of [akia, `token ${akia}`]) {
+    o.toolResult = { result: { base64: v } }
+    const r: any = await $.tool.call({ tool: 'mcp__x__y' } as any)
+    expect(JSON.stringify(r)).not.toContain(akia)
+  }
+})
+
+test('tool.call: 2 MB std and base64url payloads are kept byte-identical (P10)', async ($, on) => {
+  const o: Opts = {}
+  engine(on, o)
+  for (const big of ['JVBERi0x' + 'A+/'.repeat(700000) + '\n' + 'AKIA' + 'B'.repeat(16) + '==', 'JVBERi0x' + 'A-_'.repeat(700000)]) {
+    o.toolResult = { type: 'pdf', file: { filePath: '/x.pdf', base64: big, originalSize: 1 } }
+    const r: any = await $.tool.call({ tool: 'Read', file_path: '/x.pdf' } as any)
+    expect(r.result.file.base64 === big).toBe(true)
+  }
+})
+
 test('tool.call: PDF base64 over 2 MB is kept whole; other strings still masked', async ($, on) => {
   const big = 'JVBERi0x' + 'A'.repeat(2 * 1024 * 1024 + 16)
   engine(on, { toolResult: { type: 'pdf', file: { filePath: '/x.pdf', base64: big, originalSize: 1, note: `cfg ${GH}` } } })
@@ -166,7 +198,7 @@ test('tool.call: PDF base64 over 2 MB is kept whole; other strings still masked'
 })
 
 test('tool.call: page base64 with a key-shaped run is not rewritten', async ($, on) => {
-  const akid = 'JVBERi0x/AKIA' + 'B'.repeat(16) + '/QUJD'
+  const akid = 'JVBERi0x/AKIA' + 'B'.repeat(16) + '/QUJD' + 'Q'.repeat(300) + '\n' + 'QUJD'.repeat(10) + '=='
   engine(on, { toolResult: { type: 'parts', file: { filePath: '/x.pdf', originalSize: 1, count: 1, outputDir: '/o', parts: [{ base64: akid, page: 1 }] } } })
   const r: any = await $.tool.call({ tool: 'Read', file_path: '/x.pdf' } as any)
   expect(r.result.file.parts[0].base64).toBe(akid)
