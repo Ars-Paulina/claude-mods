@@ -1,10 +1,16 @@
 {
   "name": "claude-mods",
-  "description": "Small Claude Code mods: session card, prompt index, plugin toggles, flow board, pendings band, Haiku search routing",
+  "description": "Small Claude Code mods: canary heartbeat, session card, prompt index, plugin toggles, flow board, pendings band, Haiku search routing",
   "owner": {
     "name": "Pedro Malla"
   },
   "plugins": [
+    {
+      "name": "canary",
+      "source": "./plugins/canary",
+      "description": "Context-rot heartbeat: Claude ends each reply with a secret footer; warns when it keeps dropping or garbling it",
+      "version": "0.1.0"
+    },
     {
       "name": "flow-board",
       "source": "./plugins/flow-board",
