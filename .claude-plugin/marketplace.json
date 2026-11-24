@@ -1,0 +1,45 @@
+{
+  "name": "claude-mods",
+  "description": "Small Claude Code mods: session card, prompt index, plugin toggles, flow board, pendings band, Haiku search routing",
+  "owner": {
+    "name": "Pedro Malla"
+  },
+  "plugins": [
+    {
+      "name": "flow-board",
+      "source": "./plugins/flow-board",
+      "description": "One line above the prompt: background agents, git dirty/ahead, PR checks, GSD state and whether /clear is safe. Adds /park and a one-press GSD phase handoff button.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "haiku-search",
+      "source": "./plugins/haiku-search",
+      "description": "Push main-thread search to Explore on Haiku; routes subagent models (model-router)",
+      "version": "0.1.0"
+    },
+    {
+      "name": "pendings-band",
+      "source": "./plugins/pendings-band",
+      "description": "One line above the prompt with the next ready pending for the project you are in, read from a local goal ledger (bundled goals.py). Read only.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "prompt-index",
+      "source": "./plugins/prompt-index",
+      "description": "A pane listing your prompts; Enter scrolls the chat to that prompt",
+      "version": "0.1.0"
+    },
+    {
+      "name": "session-board",
+      "source": "./plugins/session-board",
+      "description": "One calm card above the prompt: what this session is about, whose turn it is, what is pending and the next step",
+      "version": "0.2.0"
+    },
+    {
+      "name": "toggles",
+      "source": "./plugins/toggles",
+      "description": "Pane to turn plugins, skills and MCP servers on or off for this project",
+      "version": "0.2.0"
+    }
+  ]
+}

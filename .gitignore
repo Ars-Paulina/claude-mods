@@ -1,0 +1,6 @@
+.claude-plugin/types/
+**/.claude-plugin/types/
+__pycache__/
+*.log
+.DS_Store
+.spike.jsonl
