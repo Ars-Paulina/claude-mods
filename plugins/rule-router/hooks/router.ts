@@ -23,7 +23,7 @@ async function findPython($: EngineInterface): Promise<string[]> {
 // Background-task results are harness text, not the person's words: they fired
 // rules nobody asked about (2026-11-18). The settings hook had to strip them from
 // the prompt with a regex; here the engine says where a prompt came from.
-export function shouldScan(e: Pick<PromptSubmitInput, 'text' | 'origin' | 'isMeta'>): boolean {
+export function shouldScan(e: Pick<PromptSubmitInput, 'text' | 'origin'> & Partial<Pick<PromptSubmitInput, 'isMeta'>>): boolean {
   return e.text.trim() !== '' && !e.isMeta && e.origin?.kind !== 'task-notification'
 }
 
