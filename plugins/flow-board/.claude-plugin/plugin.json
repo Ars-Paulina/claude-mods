@@ -1,0 +1,19 @@
+{
+  "name": "flow-board",
+  "version": "0.1.0",
+  "description": "One line above the prompt: background agents, git dirty/ahead, PR checks, GSD state and whether /clear is safe. Adds /park and a one-press GSD phase handoff button.",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Show the flow board",
+      "description": "Kill switch. Off draws nothing, registers nothing and runs nothing.",
+      "default": true
+    }
+  },
+  "types": "./types/index.d.ts",
+  "license": "MIT",
+  "repository": "https://github.com/Ars-Paulina/claude-mods"
+}
