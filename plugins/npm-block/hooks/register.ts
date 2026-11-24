@@ -9,5 +9,8 @@ export const register: Register = on => {
     $.ui.toast('npm → pnpm')
 
     return next({ ...e, command })
-  })
+  }).catch(($, e, next) =>
+    // Fail closed: if the rewrite threw before the call went on, refuse rather than let raw npm run.
+    next.called ? next(e) : { deny: `${$.plugin.name}: could not rewrite this command, so it was not run.` },
+  )
 }
