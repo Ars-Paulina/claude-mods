@@ -56,7 +56,7 @@ export const register: Register = (on, options) => {
       text: mask(e.text, hits),
       context: [
         ...(e.context ?? []),
-        `SECRET SCREEN: ${hits.length} credential-shaped value(s) [${labels(hits)}] were masked before this prompt was stored or sent. They may still sit in prompt history: treat them as compromised and rotate them, and do not echo them. Ask for values through a temp file or the secrets manager, never in a prompt. Logged (redacted) to ~/${LOG}.`,
+        `SECRET SCREEN: ${hits.length} credential-shaped value(s) [${labels(hits)}] were masked before this prompt was stored or sent. A live value was still exposed outside this session (clipboard, screen): rotate it, and do not echo it. Ask for values through a temp file or the secrets manager, never in a prompt. Logged (redacted) to ~/${LOG}.`,
       ],
     })
   }).catch(($, e, next) =>

@@ -1,6 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { detect, mask } from './detect'
+
 // Fake credentials built at run time so no scanner sees a literal token in this file.
 const PAT = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0'.repeat(2)
 const OPENAI = 'sk-' + 'Zx9Yw8Vu7Ts6Rq5Po4Nm3Lk2'
@@ -102,3 +104,59 @@ for (const kind of ['prompt', 'command'] as const) {
     expect(seen.join('\n')).not.toContain(PAT)
   })
 }
+
+test('false positives fixed: slugs with sk-, hex path segments, keyboard', async ($, on) => {
+  const w = world(on)
+  const hex = '0123456789abcdef'.repeat(2)
+  const prompts = [
+    'merge branch fix/task-queue-retry-on-failure please',
+    'rename desk-booking-calendar-widget.tsx',
+    `read /tmp/x/2.1.331/${hex}/plugin-authoring/reference.md, check the token budget`,
+    `my keyboard checksum is ${hex}`,
+    `the token cache is in /cache/${hex}/data`,
+  ]
+  for (const text of prompts) await $.prompt.submit({ text } as never)
+  expect(w.core.map(c => c.text)).toEqual(prompts)
+  expect(w.writes).toEqual([])
+})
+
+test('real ones still caught: API_KEY= hex, sk- after a space or quote', async ($, on) => {
+  const w = world(on)
+  const hex = '0123456789abcdef'.repeat(2)
+  await $.prompt.submit({ text: `API_KEY=${hex}` } as never)
+  await $.prompt.submit({ text: `key "${OPENAI}"` } as never)
+  expect(w.core.map(c => c.text)).toEqual(['API_KEY=[secret masked: hex32]', 'key "[secret masked: openai_key]"'])
+})
+
+test('mask: overlapping hits are masked as one span, no tail left', () => {
+  const text = 'aa SECRETONE-SECRETTWO bb'
+  const out = mask(text, [
+    { label: 'x', value: 'SECRETONE-SE', ranges: [[3, 15]] },
+    { label: 'y', value: 'E-SECRETTWO', ranges: [[11, 22]] },
+  ])
+  expect(out).toBe('aa [secret masked: x+y] bb')
+})
+
+test('worst-case input stays far inside the 10 s hook budget (no regex blow-up)', async ($, on) => {
+  const w = world(on)
+  const inputs = ['eyJ'.repeat(100_000), 'sk-'.repeat(200_000), 'postgres://a:' + 'b'.repeat(500_000), `token ${'a1'.repeat(300_000)}`]
+  const t0 = Date.now()
+  for (const text of inputs) detect(text)
+  expect(Date.now() - t0).toBeLessThan(1_000)
+  // And through the hook: a big prompt with a secret at the end is still masked, not dropped or sent raw.
+  await $.prompt.submit({ text: 'eyJ'.repeat(100_000) + ` ${PAT}` } as never)
+  expect(w.core[0]!.text.endsWith(' [secret masked: github_pat]')).toBe(true)
+})
+
+test('slash command line on prompt.submit passes on, never dropped', async ($, on) => {
+  const w = world(on)
+  await $.prompt.submit({ text: `/deploy --token ${PAT}`, command: { name: 'deploy', args: `--token ${PAT}` } } as never)
+  expect(w.core.length).toBe(1)
+})
+
+test('hidden prompt starting its own turn: text unchanged (engine allows no rewrite), warning added', async ($, on) => {
+  const w = world(on)
+  await $.prompt.submit({ text: `note ${PAT}`, isMeta: true } as never)
+  expect(w.core[0]!.text).toBe(`note ${PAT}`)
+  expect(w.core[0]!.context.join('\n')).toContain('could not be masked')
+})
