@@ -4,78 +4,141 @@ import { maskString } from './mask'
 // Secret-shaped strings are built at run time so no literal sits in the source.
 const GH = 'ghp_' + 'a'.repeat(36)
 const CANARY = 'Zq7-canary-' + 'Value_91x'
+const CANARY2 = 'Kp4-second-' + 'Value_33y'
 const API = 'n8nk3y-abc-' + '123456'
 
 const hex = async (s: string) =>
   [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, '0')).join('')
+const fpJson = async (v: string, name: string) => JSON.stringify({ fingerprints: [{ name, sha256: await hex(v), len: v.length }] })
 
-async function engine(on: any, opts: { throwEnv?: boolean; fp?: boolean } = {}) {
-  const fpFile = JSON.stringify({ fingerprints: [{ name: 'CANARY', sha256: await hex(CANARY), len: CANARY.length }] })
+type Opts = { throwEnv?: boolean; off?: boolean; files?: { name: string; mtimeMs: number; text: string }[]; toasts?: string[]; toolResult?: unknown }
+
+function engine(on: any, o: Opts = {}) {
   on('env.get', (_: any, e: any) => {
-    if (opts.throwEnv) throw new Error('boom')
-    return { value: ({ HOME: '/h', SECRET_MASK: undefined, SECRET_MASK_FP_DIR: undefined } as any)[e.name] }
+    if (o.throwEnv) throw new Error('boom')
+    return { value: ({ HOME: '/h', SECRET_MASK: o.off ? 'off' : undefined } as any)[e.name] }
   })
-  on('fs.list', () => (opts.fp ? { value: [{ name: 'T.json', kind: 'file', size: 1, mtimeMs: 1, isLink: false }] } : { value: [] }))
-  on('fs.read', () => ({ value: fpFile }))
+  on('fs.list', () => ({ value: (o.files ?? []).map((f) => ({ name: f.name, kind: 'file', size: 1, mtimeMs: f.mtimeMs, isLink: false })) }))
+  on('fs.read', (_: any, e: any) => ({ value: (o.files ?? []).find((f) => e.path.endsWith(f.name))?.text ?? '' }))
+  on('ui.toast', (_: any, e: any) => { o.toasts?.push(e.text); return { value: undefined } })
+  on('tool.call', () => ({ result: o.toolResult ?? { stdout: 'hello', stderr: '', interrupted: false, isImage: false } }))
 }
 
 const text = (t: string) => ({ type: 'text', text: t })
-const row = (door: string, content: unknown[], type = 'user') =>
+const tr = (content: unknown) => [{ type: 'tool_result', tool_use_id: 't1', content }]
+const row = (door: string, content: unknown, type = 'user') =>
   ({ message: { type, role: 'user', isMeta: true, content }, door, origin: { kind: 'tool', tool: 'Bash' }, uuid: crypto.randomUUID() }) as any
 const dump = (r: any) => JSON.stringify(r.message.content)
 
-test('tool-result door: string content masked, notice appended', async ($, on) => {
-  await engine(on)
-  const r = await $.session.append(row('tool-result', [{ type: 'tool_result', tool_use_id: 't1', content: `token ${GH} ok` }]))
+const DOORS = ['tool-result', 'tool-message', 'hook-context', 'attachment', 'delivery', 'note', 'compaction', 'notice', 'command'] as const
+
+test('every door masks text blocks and string content', async ($, on) => {
+  engine(on)
+  for (const door of DOORS) {
+    const a = await $.session.append(row(door, [text(`x ${GH}`)]))
+    expect(dump(a)).not.toContain(GH)
+    const b = await $.session.append(row(door, `x ${GH}`))
+    expect(dump(b)).not.toContain(GH)
+    expect(dump(b)).toContain('[MASKED:github_token]')
+  }
+})
+
+test('response door: the model echoing a secret is masked too', async ($, on) => {
+  engine(on)
+  const r = await $.session.append({ message: { type: 'assistant', role: 'assistant', content: [text(`here ${GH}`)] }, door: 'response', origin: { kind: 'model', model: 'm' }, uuid: 'r1' } as any)
   expect(dump(r)).not.toContain(GH)
-  expect(dump(r)).toContain('[MASKED:github_token]')
+})
+
+test('tool_result: string content masked, notice appended', async ($, on) => {
+  engine(on)
+  const r = await $.session.append(row('tool-result', tr(`token ${GH} ok`)))
+  expect(dump(r)).not.toContain(GH)
   expect(dump(r)).toContain('Never try to print')
 })
 
-test('tool-result door: block-array content masked, image kept', async ($, on) => {
-  await engine(on)
+test('tool_result: text blocks masked, image kept', async ($, on) => {
+  engine(on)
   const img = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBOR' } }
-  const r = await $.session.append(row('tool-result', [{ type: 'tool_result', tool_use_id: 't1', content: [text(`N8N_API_KEY=${API}`), img] }]))
+  const r = await $.session.append(row('tool-result', tr([text(`N8N_API_KEY=${API}`), img])))
   expect(dump(r)).not.toContain(API)
   expect(dump(r)).toContain('iVBOR')
 })
 
-test('hook-context door masked', async ($, on) => {
-  await engine(on)
-  const r = await $.session.append(row('hook-context', [text(`ctx ${GH}`)], 'attachment'))
+test('tool_result: search_result with a secret becomes a text line; clean one kept', async ($, on) => {
+  engine(on)
+  const bad = { type: 'search_result', source: 'https://x.test', title: 't', content: [text(`found ${GH}`)] }
+  const good = { type: 'search_result', source: 'https://y.test', title: 'u', content: [text('fine')] }
+  const r = await $.session.append(row('tool-result', tr([bad, good])))
   expect(dump(r)).not.toContain(GH)
+  expect(dump(r)).toContain('search_result block held a secret')
 })
 
-test('attachment door masked', async ($, on) => {
-  await engine(on)
-  const r = await $.session.append(row('attachment', [text(`file says ${GH}`)], 'attachment'))
+test('tool_result: document with a secret in its text source is dropped', async ($, on) => {
+  engine(on)
+  const doc = { type: 'document', source: { type: 'text', media_type: 'text/plain', data: `cfg ${GH}` } }
+  const r = await $.session.append(row('tool-result', tr([doc])))
   expect(dump(r)).not.toContain(GH)
-})
-
-test('exact layer: devrun fingerprint masks a value with no known shape', async ($, on) => {
-  await engine(on, { fp: true })
-  const r = await $.session.append(row('tool-result', [{ type: 'tool_result', tool_use_id: 't1', content: `value is ${CANARY} ok` }]))
-  expect(dump(r)).not.toContain(CANARY)
-  expect(dump(r)).toContain('[MASKED:CANARY]')
-})
-
-test('clean row passes unchanged', async ($, on) => {
-  await engine(on)
-  const r = await $.session.append(row('tool-result', [{ type: 'tool_result', tool_use_id: 't1', content: 'commit 3f2a9c1d0b8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a' }]))
-  expect(dump(r)).toBe(JSON.stringify([{ type: 'tool_result', tool_use_id: 't1', content: 'commit 3f2a9c1d0b8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a' }]))
+  expect(dump(r)).toContain('document block held a secret')
 })
 
 test('prompt door is left alone (person typed it)', async ($, on) => {
-  await engine(on)
+  engine(on)
   const r = await $.session.append({ ...row('prompt', [text(`mine ${GH}`)]), origin: { kind: 'composer' } })
   expect(dump(r)).toContain(GH)
 })
 
-test('throw path fails closed: content withheld, secret never stored', async ($, on) => {
-  await engine(on, { throwEnv: true })
-  const r = await $.session.append(row('tool-result', [{ type: 'tool_result', tool_use_id: 't1', content: `token ${GH}` }]))
-  expect(dump(r)).not.toContain(GH)
-  expect(dump(r)).toContain('content withheld')
+test('clean row passes unchanged', async ($, on) => {
+  engine(on)
+  const clean = tr('commit 3f2a9c1d0b8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a')
+  const r = await $.session.append(row('tool-result', clean))
+  expect(dump(r)).toBe(JSON.stringify(clean))
+})
+
+test('SECRET_MASK=off turns both hooks off', async ($, on) => {
+  engine(on, { off: true, toolResult: { stdout: GH, stderr: '' } })
+  expect(dump(await $.session.append(row('tool-result', tr(GH))))).toContain(GH)
+  expect(JSON.stringify(await $.tool.call({ tool: 'Bash', command: 'x' } as any))).toContain(GH)
+})
+
+test('exact layer: fingerprint masks a value with no known shape; mtime change reloads; corrupt file ignored', async ($, on) => {
+  const files = [{ name: 'A.json', mtimeMs: 1, text: await fpJson(CANARY, 'CANARY') }, { name: 'bad.json', mtimeMs: 1, text: '{not json' }]
+  engine(on, { files })
+  const r1 = await $.session.append(row('tool-result', tr(`v ${CANARY} ${CANARY2}`)))
+  expect(dump(r1)).toContain('[MASKED:CANARY]')
+  expect(dump(r1)).toContain(CANARY2)
+  files[0] = { name: 'A.json', mtimeMs: 2, text: await fpJson(CANARY2, 'SECOND') }
+  const r2 = await $.session.append(row('tool-result', tr(`v ${CANARY2}`)))
+  expect(dump(r2)).toContain('[MASKED:SECOND]')
+})
+
+test('tool.call: structured result (transcript toolUseResult) is masked', async ($, on) => {
+  engine(on, { toolResult: { stdout: `pw ${GH}`, stderr: '', interrupted: false, isImage: false } })
+  const r: any = await $.tool.call({ tool: 'Bash', command: 'x' } as any)
+  expect(JSON.stringify(r)).not.toContain(GH)
+  expect(Object.keys(r.result).join()).toBe('stdout,stderr,interrupted,isImage')
+})
+
+test('tool.call: clean result relayed as is', async ($, on) => {
+  engine(on)
+  const r: any = await $.tool.call({ tool: 'Bash', command: 'x' } as any)
+  expect(r.result.stdout).toBe('hello')
+})
+
+test('tool.call throw path: result withheld (deny)', async ($, on) => {
+  engine(on, { throwEnv: true, toolResult: { stdout: GH, stderr: '' } })
+  const r: any = await $.tool.call({ tool: 'Bash', command: 'x' } as any)
+  expect(JSON.stringify(r)).not.toContain(GH)
+})
+
+test('throw path fails closed for block and string content; one toast for many rows', async ($, on) => {
+  const toasts: string[] = []
+  engine(on, { throwEnv: true, toasts })
+  for (const content of [tr(`token ${GH}`), `ctx ${GH}`, [text(`a ${GH}`)], tr([text(`b ${GH}`), { type: 'search_result', source: 's', title: 't', content: [text(GH)] }])]) {
+    const r = await $.session.append(row('hook-context', content))
+    expect(dump(r)).not.toContain(GH)
+    expect(dump(r)).toContain('content withheld')
+  }
+  expect(toasts.length).toBe(1)
 })
 
 test('engine: false positives untouched, ported layers fire', async () => {
