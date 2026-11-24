@@ -11,6 +11,7 @@ Small mods for [Claude Code](https://code.claude.com): extra panes, lines above 
 | [pendings-band](plugins/pendings-band) | A line with the next ready step for this project, from a local goal ledger (bundled `goals.py`) |
 | [haiku-search](plugins/haiku-search) | Hands multi-step search to an Explore subagent on Haiku and pins subagent models |
 | [npm-block](plugins/npm-block) | Rewrites `npm` to `pnpm` in Bash commands instead of blocking them |
+| [secret-mask](plugins/secret-mask) | Masks secrets in tool results, hook context and attachments before the model or transcript sees them |
 
 ## Install
 

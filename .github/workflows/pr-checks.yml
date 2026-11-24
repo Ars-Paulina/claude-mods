@@ -1,0 +1,62 @@
+name: PR checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep in step with the Claude Code version the mods are developed on.
+  CLAUDE_CODE_VERSION: 2.1.331
+  GITLEAKS_VERSION: 8.30.1
+
+jobs:
+  mods:
+    name: validate and test mods
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install Claude Code
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+      - name: Validate and test every mod
+        run: |
+          failed=0
+          for dir in plugins/*/; do
+            echo "::group::${dir}"
+            claude plugin validate "$dir" || failed=1
+            # `claude plugin test` exits 1 when a mod has no test files, so only run it when there are some.
+            if find "$dir" -path '*/node_modules' -prune -o \( -name '*.test.ts' -o -name '*.test.tsx' \) -print | grep -q .; then
+              claude plugin test "$dir" || failed=1
+            else
+              echo "no tests in ${dir}, skipping claude plugin test"
+            fi
+            echo "::endgroup::"
+          done
+          exit "$failed"
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+      - name: Scan the PR's commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: gitleaks detect --source . --no-banner --redact --log-opts="${BASE_SHA}..${HEAD_SHA}"
