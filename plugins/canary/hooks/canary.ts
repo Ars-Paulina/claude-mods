@@ -1,7 +1,7 @@
 // Pure logic of the canary heartbeat: no engine calls, so tests can drive it directly.
 // Ported from ~/.claude/hooks/canary-plant.js + canary-check.js.
 
-export type Result = 'HEALTHY' | 'STALE-HEALTHY' | 'CONFABULATION' | 'WRONG-TOKEN' | 'DECAY' | 'SKIP'
+export type Result = 'HEALTHY' | 'CONFABULATION' | 'WRONG-TOKEN' | 'DECAY' | 'SKIP'
 
 export type State = {
   token: string
@@ -11,9 +11,6 @@ export type State = {
   alerted: boolean
   plantedAt: number
   touchedAt: number
-  prevToken?: string
-  prevPayload?: number
-  staleTokenSeen?: boolean
   lastResult?: Result
 }
 
@@ -68,9 +65,6 @@ export function classify(text: string, s: State, minProse: number): Result {
   // Anchored: the footer must be the last non-whitespace, so a mid-reply mention is not healthy.
   const shape = /⟦([A-Za-z0-9]+):(\d+)⟧\s*$/.exec(text.trim())
   if (shape && shape[1] === s.token) return Number(shape[2]) === s.payload ? 'HEALTHY' : 'CONFABULATION'
-  if (shape && s.prevToken && shape[1] === s.prevToken) {
-    return Number(shape[2]) === s.prevPayload ? 'STALE-HEALTHY' : 'CONFABULATION'
-  }
   if (shape) return 'WRONG-TOKEN'
 
   return proseLength(text) < minProse ? 'SKIP' : 'DECAY'
@@ -86,12 +80,11 @@ export function score(prev: State, text: string, lim: Limits): { state: State; r
   const result = classify(text, prev, lim.minProse)
   if (result === 'SKIP') return { state: prev, result, alertNow: false }
 
-  const healthy = result === 'HEALTHY' || result === 'STALE-HEALTHY'
+  const healthy = result === 'HEALTHY'
   const window = [...prev.window, healthy].slice(-lim.window)
   const misses = window.filter(v => !v).length
   const frac = misses / window.length
   const state: State = { ...prev, window, misses, lastResult: result }
-  if (result === 'STALE-HEALTHY') state.staleTokenSeen = true
 
   let alertNow = false
   if (window.length >= lim.window && frac >= lim.missRate) {

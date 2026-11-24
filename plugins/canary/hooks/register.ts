@@ -8,7 +8,8 @@ import { alertText, directive, limits, REASONS, score, TTL_MS, type State } from
 
 let id = ''
 let state: State | null = null
-let pendingAlert = '' // shown to the model on the next request, then cleared
+// Shown in every system prompt until the next main-loop turn ends: a subagent render can't swallow it.
+let pendingAlert = ''
 
 function rand(n: number): number {
   const a = new Uint32Array(1)
@@ -48,7 +49,7 @@ export const register: Register = (on, options) => {
     try {
       id = await $.session.id()
       const now = await $.clock.now()
-      const saved = (await $.store.get(`canary:${id}`)) as State | undefined
+      const saved = (await $.store.get(`canary:${id}`).catch(() => undefined)) as State | undefined // unreadable store still plants
       state = saved && saved.token ? { ...saved } : fresh(now)
       await save($)
       $.ui.log(`canary: ${saved ? 'reused' : 'planted'} ⟦${state.token}:${state.payload}⟧`)
@@ -67,7 +68,6 @@ export const register: Register = (on, options) => {
     const sections = [...r.sections, { id: 'canary:directive', text: directive(state), scope: 'session' as const }]
     if (pendingAlert) {
       sections.push({ id: 'canary:alert', text: pendingAlert, scope: 'session' as const })
-      pendingAlert = ''
     }
 
     return { ...r, sections }
@@ -78,14 +78,15 @@ export const register: Register = (on, options) => {
     const answer = 'answer' in e ? String(e.answer ?? '') : ''
     // Main loop only (subagent turns carry agentId). Interrupted, refused or failed turns never got to
     // their footer, so they carry no opinion.
-    const isScored = e.agentId === undefined && e.reason === 'answer'
+    const isMain = e.agentId === undefined
+    const isScored = isMain && e.reason === 'answer'
+    if (isMain) pendingAlert = '' // the main model has had a request carrying it
     if (state && answer.trim() && isScored) {
       const r = score(state, answer, lim)
       state = r.state
       if (r.result !== 'SKIP') {
         await save($).catch(() => {})
-        const healthy = r.result === 'HEALTHY' || r.result === 'STALE-HEALTHY'
-        if (!healthy) $.ui.log(`canary: miss (${r.result}) window=${state.misses}/${state.window.length}`)
+        if (r.result !== 'HEALTHY') $.ui.log(`canary: miss (${r.result}) window=${state.misses}/${state.window.length}`)
         if (r.alertNow) {
           const reason = REASONS[r.result] ?? 'dropped'
           pendingAlert = alertText(state, reason)

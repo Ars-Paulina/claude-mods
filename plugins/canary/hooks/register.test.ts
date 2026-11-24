@@ -27,16 +27,13 @@ const PROSE = 'Here is a full reply with plenty of prose in it, long enough to c
 
 const base: State = { token: 'AB12', payload: 345, window: [], misses: 0, alerted: false, plantedAt: 0, touchedAt: 0 }
 
-test('classify: anchored footer, wrong value, wrong token, decay, skip, stale grace', async () => {
+test('classify: anchored footer, wrong value, wrong token, decay, skip', async () => {
   expect(classify(`${PROSE}\n⟦AB12:345⟧`, base, 40)).toBe('HEALTHY')
   expect(classify(`${PROSE}\n⟦AB12:999⟧`, base, 40)).toBe('CONFABULATION')
   expect(classify(`${PROSE}\n⟦FFFF:345⟧`, base, 40)).toBe('WRONG-TOKEN')
   expect(classify(`⟦AB12:345⟧ mentioned mid reply. ${PROSE}`, base, 40)).toBe('DECAY')
   expect(classify('ok', base, 40)).toBe('SKIP')
   expect(classify('```\n' + 'x'.repeat(500) + '\n```\nok', base, 40)).toBe('SKIP')
-  const rotated = { ...base, prevToken: 'CD34', prevPayload: 111 }
-  expect(classify(`${PROSE}\n⟦CD34:111⟧`, rotated, 40)).toBe('STALE-HEALTHY')
-  expect(classify(`${PROSE}\n⟦CD34:222⟧`, rotated, 40)).toBe('CONFABULATION')
 })
 
 test('score: alerts once on a full window over the miss rate, re-arms after recovery', async () => {
@@ -83,8 +80,12 @@ test('check: misses at turn end raise a toast and an alert section on the next r
   expect(toasts.length).toBe(1)
   const r = await compose($)
   expect(r.sections.map((s: any) => s.id)).toContain('canary:alert')
-  const again = await compose($)
-  expect(again.sections.map((s: any) => s.id)).not.toContain('canary:alert') // shown once
+  const again = await compose($) // a subagent render in between must not swallow it
+  expect(again.sections.map((s: any) => s.id)).toContain('canary:alert')
+  await $.turn.complete({ ...(turn(PROSE) as object), agentId: 'sub-1' } as never)
+  expect((await compose($)).sections.map((s: any) => s.id)).toContain('canary:alert')
+  await $.turn.complete(turn('ok')) // next main turn: the main model has seen it
+  expect((await compose($)).sections.map((s: any) => s.id)).not.toContain('canary:alert')
 })
 
 test('check: aborted and subagent turns are not scored', async ($, on) => {
