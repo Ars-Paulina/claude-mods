@@ -2,7 +2,7 @@
 
 One line above the prompt with the next ready step ("pending") for the project you are in. Steps come from a small local goal ledger that the bundled `scripts/goals.py` keeps in `~/.claude/goal-ledger/`. The band only reads it.
 
-Needs Python 3.9+ (`python3`, `python` or `py -3`).
+Needs Python 3.10+ (`python3`, `python` or `py -3`).
 
 ## Install
 

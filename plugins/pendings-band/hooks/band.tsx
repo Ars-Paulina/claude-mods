@@ -13,13 +13,13 @@ async function findPython($: EngineInterface): Promise<string[]> {
   if (python) return python
   for (const argv of [['python3'], ['python'], ['py', '-3']]) {
     try {
-      const run = await $.process.run([...argv, '-c', 'import sys; assert sys.version_info >= (3, 9)'])
+      const run = await $.process.run([...argv, '-c', 'import sys; assert sys.version_info >= (3, 10)'])
       if (run.exitCode === 0) return (python = argv)
     } catch {
       // not installed under this name: try the next
     }
   }
-  throw new Error('Python 3.9+ not found (python3, python or py -3)')
+  throw new Error('Python 3.10+ not found (python3, python or py -3)')
 }
 
 // Longest whole-segment match: "~/a/b" matches ~/a/b and ~/a/b/c, never ~/a/b-x.
