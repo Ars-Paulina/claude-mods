@@ -1,0 +1,10 @@
+{
+  "name": "haiku-search",
+  "version": "0.1.0",
+  "description": "Push main-thread search to Explore on Haiku; routes subagent models (model-router)",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/Ars-Paulina/claude-mods"
+}
