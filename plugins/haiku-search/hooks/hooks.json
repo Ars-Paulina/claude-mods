@@ -4,14 +4,37 @@
       {
         "matcher": "Grep|Glob|Bash",
         "hooks": [
-          { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/search-delegate.js\"", "timeout": 5 }
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/search-delegate.js\"",
+            "timeout": 5
+          }
         ]
       },
       {
         "matcher": "Agent|Task",
         "hooks": [
-          { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/model-router.js\"", "timeout": 5 },
-          { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/search-delegate.js\"", "timeout": 5 }
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/model-router.js\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/search-delegate.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/search-delegate.js\"",
+            "timeout": 5
+          }
         ]
       }
     ]

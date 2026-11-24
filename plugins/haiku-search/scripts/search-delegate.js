@@ -61,8 +61,14 @@ function run(input, mode) {
   const file = path.join(STATE_DIR, path.basename(String(input.session_id)) + ".json");
   let st = {};
   try { st = JSON.parse(fs.readFileSync(file, "utf8")); } catch (_) {}
-  // New prompt = fresh count (prompt_id changes per user prompt).
-  if (st.prompt_id !== input.prompt_id) st = { prompt_id: input.prompt_id, n: 0, after_explore: false };
+  // New prompt = fresh count. The UserPromptSubmit hook is the sure boundary;
+  // a changed prompt_id (when the payload has one) is a second signal.
+  const isNewPrompt = input.hook_event_name === "UserPromptSubmit";
+  if (isNewPrompt || typeof st.n !== "number" || st.prompt_id !== input.prompt_id) st = { prompt_id: input.prompt_id, n: 0, after_explore: false };
+  if (isNewPrompt) {
+    save(file, st);
+    return null;
+  }
 
   const t = input.tool_name;
   if (t === "Agent" || t === "Task") {

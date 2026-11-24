@@ -54,6 +54,14 @@ is "$(echo 'not json' | node "$H"; echo "rc=$?")" "^rc=0$" "malformed input -> p
 
 # Latency: 20 runs, p95 < 50 ms.
 P="lat"; ts=()
+# Payloads without prompt_id: only the UserPromptSubmit hook marks a new prompt.
+S="selftest-$$-noid"
+np() { echo "{\"session_id\":\"$S\",\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"x\"}}" | node "$H"; }
+for i in 1 2 3 4 5; do np >/dev/null; done
+is "$(np)" '"permissionDecision":"deny"' "no prompt_id: 6th search still denied"
+is "$(echo "{\"session_id\":\"$S\",\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"next\"}" | node "$H")" "" "UserPromptSubmit prints nothing"
+is "$(np)" "" "no prompt_id: new user prompt = fresh count"
+
 for i in $(seq 20); do a=$(date +%s%N); grep_ >/dev/null; ts+=($(( ($(date +%s%N)-a)/1000000 ))); done
 p95=$(printf '%s\n' "${ts[@]}" | sort -n | sed -n 19p)
 [ "$p95" -lt 50 ] && echo "ok   latency p95 ${p95}ms" || { echo "FAIL latency p95 ${p95}ms"; fail=1; }
