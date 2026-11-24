@@ -30,6 +30,12 @@
       "version": "0.1.0"
     },
     {
+      "name": "prompt-secret-screen",
+      "source": "./plugins/prompt-secret-screen",
+      "description": "Masks credential-shaped values in your prompt before it is stored or sent, and logs a redacted rotate-queue record",
+      "version": "0.1.0"
+    },
+    {
       "name": "session-board",
       "source": "./plugins/session-board",
       "description": "One calm card above the prompt: what this session is about, whose turn it is, what is pending and the next step",

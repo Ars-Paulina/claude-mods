@@ -1,0 +1,18 @@
+{
+  "name": "prompt-secret-screen",
+  "version": "0.1.0",
+  "description": "Masks credential-shaped values in your prompt before it is stored or sent, and logs a redacted rotate-queue record",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Mask secrets in prompts",
+      "description": "Kill switch. Off registers nothing and runs nothing.",
+      "default": true
+    }
+  },
+  "license": "MIT",
+  "repository": "https://github.com/Ars-Paulina/claude-mods"
+}
