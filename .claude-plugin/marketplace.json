@@ -18,6 +18,12 @@
       "version": "0.1.0"
     },
     {
+      "name": "npm-block",
+      "source": "./plugins/npm-block",
+      "description": "Rewrites npm to pnpm in Bash commands instead of blocking them",
+      "version": "0.1.0"
+    },
+    {
       "name": "pendings-band",
       "source": "./plugins/pendings-band",
       "description": "One line above the prompt with the next ready pending for the project you are in, read from a local goal ledger (bundled goals.py). Read only.",
@@ -36,10 +42,22 @@
       "version": "0.1.0"
     },
     {
+      "name": "secret-mask",
+      "source": "./plugins/secret-mask",
+      "description": "Masks secrets in tool results, hook context and attachments before the model or transcript sees them",
+      "version": "0.1.0"
+    },
+    {
       "name": "session-board",
       "source": "./plugins/session-board",
       "description": "One calm card above the prompt: what this session is about, whose turn it is, what is pending and the next step",
       "version": "0.2.0"
+    },
+    {
+      "name": "statusline",
+      "source": "./plugins/statusline",
+      "description": "Status rows above the prompt (context fill, 5h and 7d limits, model, session, branch, turns, transcript, graft, project colour) plus the session files other tools read. Replaces a statusLine command.",
+      "version": "0.1.0"
     },
     {
       "name": "toggles",
