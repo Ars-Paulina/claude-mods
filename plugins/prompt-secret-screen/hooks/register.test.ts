@@ -6,20 +6,20 @@ const PAT = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0'.repeat(2)
 const OPENAI = 'sk-' + 'Zx9Yw8Vu7Ts6Rq5Po4Nm3Lk2'
 
 // The engine beneath the plugin: it records what reached core, i.e. what a session stores and sends.
-function world(on: On) {
+function world(on: On, env: Record<string, string> = { HOME: '/h' }, hasCore = true) {
   const core: { text: string; context: readonly string[] }[] = []
   const args: string[] = []
   const writes: { path: string; text: string }[] = []
   const toasts: string[] = []
-  mock.env(on, { HOME: '/h' })
+  mock.env(on, env)
   mock.clock(on, { now: 0 })
   on('session.id', () => ({ value: 'sess-1' }) as never)
   on('ui.toast', ($, e) => { toasts.push(String(e.text)); return { value: undefined } as never })
   on('ui.log', () => ({ value: undefined }) as never)
   on('fs.exists', () => ({ value: false }) as never)
   on('fs.write', ($, e: any) => { writes.push({ path: e.path, text: e.text }); return { value: undefined } as never })
-  on('prompt.submit', ($, e) => { core.push({ text: e.text, context: e.context ?? [] }); return { text: e.text, context: e.context } })
-  on('command.run', ($, e) => { args.push(e.args); return { text: 'ran' } })
+  if (hasCore) on('prompt.submit', ($, e) => { core.push({ text: e.text, context: e.context ?? [] }); return { text: e.text, context: e.context } })
+  if (hasCore) on('command.run', ($, e) => { args.push(e.args); return { text: 'ran' } })
   return { core, args, writes, toasts }
 }
 
@@ -75,3 +75,30 @@ test('kill switch: enabled off leaves the prompt as typed', { options: { enabled
   await $.prompt.submit({ text: `key ${PAT}` } as never)
   expect(w.core[0]!.text).toBe(`key ${PAT}`)
 })
+
+test('ECOSYSTEM_SECRET_SCREEN=off leaves the prompt as typed', async ($, on) => {
+  const w = world(on, { HOME: '/h', ECOSYSTEM_SECRET_SCREEN: 'off' })
+  await $.prompt.submit({ text: `key ${PAT}` } as never)
+  expect(w.core[0]!.text).toBe(`key ${PAT}`)
+})
+
+test('screen failing before next drops the prompt, never sends it raw', async ($, on) => {
+  const w = world(on)
+  on('ui.toast', () => { throw new Error('boom') })
+  const r: any = await $.prompt.submit({ text: `key ${PAT}` } as never).catch((err: unknown) => ({ err }))
+  expect(JSON.stringify(r)).not.toContain(PAT)
+  expect(w.core.map(c => c.text).join('\n')).not.toContain(PAT)
+})
+
+for (const kind of ['prompt', 'command'] as const) {
+  test(`${kind}: failure beneath, after next, never sends the raw secret down`, async ($, on) => {
+    const seen: string[] = []
+    world(on, undefined, false)
+    on('prompt.submit', ($, e) => { seen.push(e.text); throw new Error('beneath') })
+    on('command.run', ($, e) => { seen.push(e.args); throw new Error('beneath') })
+    if (kind === 'prompt') await $.prompt.submit({ text: `key ${PAT}` } as never).catch(() => {})
+    else await $.command.run({ command: 'deploy', args: `--token ${PAT}` } as never).catch(() => {})
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.join('\n')).not.toContain(PAT)
+  })
+}

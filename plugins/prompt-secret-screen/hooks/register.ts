@@ -27,6 +27,9 @@ async function record($: Engine, hits: Hit[]): Promise<void> {
   }
 }
 
+// Old hook's env kill switch, still honored: ECOSYSTEM_SECRET_SCREEN=off.
+const isOff = async ($: Engine) => ((await $.env.get('ECOSYSTEM_SECRET_SCREEN')) ?? 'on').toLowerCase() === 'off'
+
 const labels = (hits: Hit[]) => [...new Set(hits.map(h => h.label))].join(', ')
 
 export const register: Register = (on, options) => {
@@ -34,7 +37,7 @@ export const register: Register = (on, options) => {
 
   on('prompt.submit', async ($, e, next) => {
     // A slash command's line takes no rewrite here; its arguments are masked at command.run below.
-    if (e.command) return next(e)
+    if (e.command || (await isOff($))) return next(e)
     const hits = detect(e.text)
     if (!hits.length) return next(e)
     await record($, hits)
@@ -53,7 +56,7 @@ export const register: Register = (on, options) => {
       text: mask(e.text, hits),
       context: [
         ...(e.context ?? []),
-        `SECRET SCREEN: ${hits.length} credential-shaped value(s) [${labels(hits)}] were masked before this prompt was stored or sent. Ask for the value through a temp file or the secrets manager, never in a prompt. Logged (redacted) to ~/${LOG}.`,
+        `SECRET SCREEN: ${hits.length} credential-shaped value(s) [${labels(hits)}] were masked before this prompt was stored or sent. They may still sit in prompt history: treat them as compromised and rotate them, and do not echo them. Ask for values through a temp file or the secrets manager, never in a prompt. Logged (redacted) to ~/${LOG}.`,
       ],
     })
   }).catch(($, e, next) =>
@@ -62,6 +65,7 @@ export const register: Register = (on, options) => {
   )
 
   on('command.run', async ($, e, next) => {
+    if (await isOff($)) return next(e)
     const hits = detect(e.args)
     if (!hits.length) return next(e)
     await record($, hits)
