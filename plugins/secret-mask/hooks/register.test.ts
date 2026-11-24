@@ -137,6 +137,26 @@ test('tool.call: errored result with a secret is answered with its masked error 
   expect(r.deny).toContain('Exit code 1')
 })
 
+test('tool.call: errored result whose text is truncated still masks the secret in result (M1)', async ($, on) => {
+  engine(on, { toolAnswer: { isError: true, text: 'Exit code 1 (output truncated)', result: `Exit code 1\n${GH}` } })
+  const r: any = await $.tool.call({ tool: 'Bash', command: 'x' } as any)
+  expect(JSON.stringify(r)).not.toContain(GH)
+  expect(r.deny).toContain('[MASKED:github_token]')
+})
+
+test('tool.call: errored result with no text still masks result (M2)', async ($, on) => {
+  engine(on, { toolAnswer: { isError: true, result: `Exit code 1\n${GH}` } })
+  const r: any = await $.tool.call({ tool: 'Bash', command: 'x' } as any)
+  expect(JSON.stringify(r)).not.toContain(GH)
+  expect(r.deny).toContain('Exit code 1')
+})
+
+test('tool.call: text under a base64 key is still scanned (M3)', async ($, on) => {
+  engine(on, { toolResult: { result: [{ type: 'x' }, { base64: `token ${GH}` }] } })
+  const r: any = await $.tool.call({ tool: 'mcp__x__y' } as any)
+  expect(JSON.stringify(r)).not.toContain(GH)
+})
+
 test('tool.call: PDF base64 over 2 MB is kept whole; other strings still masked', async ($, on) => {
   const big = 'JVBERi0x' + 'A'.repeat(2 * 1024 * 1024 + 16)
   engine(on, { toolResult: { type: 'pdf', file: { filePath: '/x.pdf', base64: big, originalSize: 1, note: `cfg ${GH}` } } })

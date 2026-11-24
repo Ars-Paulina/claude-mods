@@ -12,6 +12,8 @@ const TOOL_FAILED = 'the tool already ran, but secret-mask could not check its o
   'Do not run it again; tell the user secret-mask is failing.'
 const DROPPED = (kind: string) => `[MASKED: a ${kind} block held a secret and was removed]`
 
+const BASE64 = /^[A-Za-z0-9+/=\s]+$/
+
 type Block = { type: string; [k: string]: unknown }
 
 // Fingerprint files change when bin/devrun runs, so the folder is listed per row and only a
@@ -53,7 +55,8 @@ async function maskDeep(v: unknown, fp: Fingerprints, hits: Hit[]): Promise<unkn
     const out: Record<string, unknown> = Object.create(null) // keeps a "__proto__" key as data
     // A Read of a PDF or its pages carries the bytes as `base64` (`{ type: 'pdf', file: { base64 } }`,
     // `parts: [{ base64 }]`): scanning them would corrupt the file, and a shape match there is noise.
-    for (const [k, x] of Object.entries(o)) out[k] = k === 'base64' && typeof x === 'string' ? x : await maskDeep(x, fp, hits)
+    // Only a value that looks like base64 is skipped; text under that key is still scanned.
+    for (const [k, x] of Object.entries(o)) out[k] = k === 'base64' && typeof x === 'string' && BASE64.test(x) ? x : await maskDeep(x, fp, hits)
     return out
   }
   return v
@@ -138,9 +141,12 @@ export const register: Register = (on) => {
     if (r.isError) {
       // An errored call's transcript copy is its error text (a failed `cat .env; false`, a psql DSN):
       // answer with a deny carrying the masked text, so the model still reads the error.
-      if (typeof r.text !== 'string') return r
-      const m = await maskString(r.text, await fingerprints($))
-      return m.hits.length ? { deny: m.text } : r
+      // Both are scanned: `result` is what the transcript stores and may hold more than `text`.
+      const fp = await fingerprints($)
+      const found = []
+      for (const s of [r.text, r.result]) if (typeof s === 'string') found.push(await maskString(s, fp))
+      if (!found.some((m) => m.hits.length)) return r
+      return { deny: found.reduce((a, b) => (b.text.length > a.text.length ? b : a)).text }
     }
     if (r.result == null || (r.result as any).isImage) return r
     const hits: Hit[] = []
