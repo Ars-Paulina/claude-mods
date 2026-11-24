@@ -1,6 +1,6 @@
 {
   "name": "claude-mods",
-  "description": "Small Claude Code mods: session card, prompt index, plugin toggles, flow board, pendings band, Haiku search routing",
+  "description": "Small Claude Code mods: session card, prompt index, plugin toggles, flow board, pendings band, Haiku search routing, pane notifications",
   "owner": {
     "name": "Pedro Malla"
   },
@@ -15,6 +15,12 @@
       "name": "haiku-search",
       "source": "./plugins/haiku-search",
       "description": "Push main-thread search to Explore on Haiku; routes subagent models (model-router)",
+      "version": "0.1.0"
+    },
+    {
+      "name": "notify-focus",
+      "source": "./plugins/notify-focus",
+      "description": "Per-pane agent state in the status line, plus a click-to-pane desktop notification",
       "version": "0.1.0"
     },
     {
