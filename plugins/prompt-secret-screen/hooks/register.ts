@@ -30,6 +30,24 @@ async function record($: Engine, hits: Hit[]): Promise<void> {
 // Old hook's env kill switch, still honored: ECOSYSTEM_SECRET_SCREEN=off.
 const isOff = async ($: Engine) => ((await $.env.get('ECOSYSTEM_SECRET_SCREEN')) ?? 'on').toLowerCase() === 'off'
 
+// Longer text is refused, not scanned: scan time must stay far inside the hook budget, because a
+// screen that overruns it with no time left for .catch would let the prompt through unscreened.
+// About 250k tokens, past any context window, so no real prompt is lost.
+export const MAX_SCAN = 1_000_000
+const TOO_LONG = `prompt-secret-screen: this text is over ${MAX_SCAN} characters, too long to screen for secrets, so it was not sent. Split it, or turn the mod off with /plugin.`
+
+// What the .catch handlers do when a hook throws or outruns its budget (next.error.kind 'throw'
+// or 'timeout'): where next was already called, replay its settled (masked) answer; else refuse.
+// Fail closed, except a slash command line on prompt.submit (no rewrite happens there) and
+// /plugin itself, so a broken screen can still be turned off.
+type Caught = { called: boolean; error?: { kind: string } }
+export function onPromptFail<E extends { command?: unknown }, R>(e: E, next: ((e: E) => R) & Caught): R | { drop: string } {
+  return next.called || e.command ? next(e) : { drop: `prompt-secret-screen failed (${next.error?.kind ?? 'error'}), so the prompt was not sent. Try again, or turn the mod off with /plugin.` }
+}
+export function onCommandFail<E extends { command: string }, R>(e: E, next: ((e: E) => R) & Caught): R | { text: string } {
+  return next.called || e.command === 'plugin' ? next(e) : { text: `prompt-secret-screen failed (${next.error?.kind ?? 'error'}), so /${e.command} did not run.` }
+}
+
 const labels = (hits: Hit[]) => [...new Set(hits.map(h => h.label))].join(', ')
 
 export const register: Register = (on, options) => {
@@ -38,6 +56,7 @@ export const register: Register = (on, options) => {
   on('prompt.submit', async ($, e, next) => {
     // A slash command's line takes no rewrite here; its arguments are masked at command.run below.
     if (e.command || (await isOff($))) return next(e)
+    if (e.text.length > MAX_SCAN) return { drop: TOO_LONG }
     const hits = detect(e.text)
     if (!hits.length) return next(e)
     await record($, hits)
@@ -59,20 +78,15 @@ export const register: Register = (on, options) => {
         `SECRET SCREEN: ${hits.length} credential-shaped value(s) [${labels(hits)}] were masked before this prompt was stored or sent. A live value was still exposed outside this session (clipboard, screen): rotate it, and do not echo it. Ask for values through a temp file or the secrets manager, never in a prompt. Logged (redacted) to ~/${LOG}.`,
       ],
     })
-  }).catch(($, e, next) =>
-    // Fail closed for plain prompts (a secret must not slip through a broken screen); commands still run, so /plugin can turn this off.
-    next.called || e.command ? next(e) : { drop: 'prompt-secret-screen failed, so the prompt was not sent. Try again, or turn the mod off with /plugin.' },
-  )
+  }).catch(($, e, next) => onPromptFail(e, next))
 
   on('command.run', async ($, e, next) => {
     if (await isOff($)) return next(e)
+    if (e.args.length > MAX_SCAN && e.command !== 'plugin') return { text: TOO_LONG }
     const hits = detect(e.args)
     if (!hits.length) return next(e)
     await record($, hits)
     $.ui.toast(`Masked ${hits.length} secret(s) in /${e.command} arguments [${labels(hits)}].`)
     return next({ ...e, args: mask(e.args, hits) })
-  }).catch(($, e, next) =>
-    // Fail closed, except /plugin, so a broken screen can still be turned off.
-    next.called || e.command === 'plugin' ? next(e) : { text: `prompt-secret-screen failed, so /${e.command} did not run.` },
-  )
+  }).catch(($, e, next) => onCommandFail(e, next))
 }

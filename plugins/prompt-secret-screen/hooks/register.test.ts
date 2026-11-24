@@ -2,10 +2,16 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { detect, mask } from './detect'
+import { MAX_SCAN, onCommandFail, onPromptFail } from './register'
 
 // Fake credentials built at run time so no scanner sees a literal token in this file.
 const PAT = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0'.repeat(2)
 const OPENAI = 'sk-' + 'Zx9Yw8Vu7Ts6Rq5Po4Nm3Lk2'
+const PROJ = 'sk-' + 'proj-' + 'Ab12Cd34Ef56Gh78Ij90Kl12'
+const JWT = ['ey' + 'JhbGciOiJIUzI1NiJ9', 'ey' + 'JzdWIiOiIxMjM0NTY3ODkwIn0', 'SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'].join('.')
+const HEX32 = '0123456789abcdef'.repeat(2)
+const HEX64 = HEX32.repeat(2)
+const masks = (text: string) => mask(text, detect(text))
 
 // The engine beneath the plugin: it records what reached core, i.e. what a session stores and sends.
 function world(on: On, env: Record<string, string> = { HOME: '/h' }, hasCore = true) {
@@ -159,4 +165,71 @@ test('hidden prompt starting its own turn: text unchanged (engine allows no rewr
   await $.prompt.submit({ text: `note ${PAT}`, isMeta: true } as never)
   expect(w.core[0]!.text).toBe(`note ${PAT}`)
   expect(w.core[0]!.context.join('\n')).toContain('could not be masked')
+})
+
+test('review 2: every copy of a detected secret is masked, even one that fails the gate alone', () => {
+  const far = `token: ${HEX32}\n${'x'.repeat(60)}\nretry with ${HEX32} please`
+  expect(masks(far)).toBe(`token: [secret masked: hex32]\n${'x'.repeat(60)}\nretry with [secret masked: hex32] please`)
+  const path = `token: ${HEX32} then open https://x.test/${HEX32}/`
+  expect(masks(path)).not.toContain(HEX32)
+})
+
+test('review 2: keyword glued to a name still gates hex (camelCase, flat, upper)', () => {
+  for (const text of [`{"accessToken": "${HEX32}"}`, `const apiKey = "${HEX64}"`, `clientSecret: ${HEX32}`, `set apikey=${HEX32} in prod`, `use SECRETKEY=${HEX32} now`]) {
+    expect(masks(text)).not.toContain(HEX32)
+  }
+  // ...but not a keyword running on into a lowercase word.
+  expect(masks(`my keyboard checksum is ${HEX32}`)).toContain(HEX32)
+  expect(masks(`the tokenizer hash ${HEX32}`)).toContain(HEX32)
+})
+
+test('review 2: glued sk- and eyJ keys are caught again', () => {
+  for (const [text, raw] of [[`export ID_TOKEN_${JWT} done`, JWT], [`run tool --key-${PROJ} now`, PROJ], [`paste OPENAI${PROJ} here`, PROJ]] as const) {
+    expect(masks(text)).not.toContain(raw)
+    expect(masks(text)).not.toContain(raw.slice(-12))
+  }
+})
+
+test('review 2: hex in a URL path is masked; a file path folder is not', () => {
+  expect(masks(`curl https://app.example.com/api/cron/${HEX32}?token=1`)).not.toContain(HEX32)
+  expect(masks(`the token cache is in /cache/${HEX32}/data`)).toContain(HEX32)
+})
+
+test('review 2: telegram token glued to an OpenAI key leaves no tail', () => {
+  const tg = '1234567:' + 'Ab3'.repeat(11) + 'sk'
+  const text = `${tg}-Zx9Yw8Vu7Ts6Rq5Po4Nm3Lk2Jh1Gf`
+  const out = masks(text)
+  expect(out.startsWith('[secret masked:')).toBe(true)
+  expect(out).not.toContain('Zx9Yw8')
+  expect(out).not.toContain('Ab3Ab3')
+})
+
+test('review 2: timeout or throw in .catch: refuse before next, replay masked answer after', () => {
+  const answered = { text: 'masked' }
+  const fresh = Object.assign(() => answered, { called: false, error: { kind: 'timeout' } })
+  const replay = Object.assign(() => answered, { called: true, error: { kind: 'timeout' } })
+  expect(onPromptFail({ text: 'x' } as { text: string; command?: unknown }, fresh)).toEqual({ drop: expect.stringContaining('(timeout)') })
+  expect(onPromptFail({ text: 'x' } as { text: string; command?: unknown }, replay)).toBe(answered)
+  expect(onPromptFail({ text: '/x', command: { name: 'x' } }, fresh)).toBe(answered)
+  expect(onCommandFail({ command: 'deploy' }, fresh)).toEqual({ text: expect.stringContaining('(timeout)') })
+  expect(onCommandFail({ command: 'plugin' }, fresh)).toBe(answered)
+  expect(onCommandFail({ command: 'deploy' }, Object.assign(() => answered, { called: false, error: { kind: 'throw' } }))).toEqual({ text: expect.stringContaining('(throw)') })
+})
+
+test('review 2: text over MAX_SCAN is refused, never scanned or sent', async ($, on) => {
+  const w = world(on)
+  const r: any = await $.prompt.submit({ text: 'a '.repeat(MAX_SCAN / 2 + 1) + PAT } as never).catch((err: unknown) => ({ err: String(err) }))
+  expect(w.core).toEqual([])
+  expect(JSON.stringify(r)).not.toContain(PAT)
+})
+
+test('review 2: 1 MB adversarial inputs each scan + mask in under 1 s', () => {
+  const M = 1_000_000
+  const inputs = ['_eyJ'.repeat(M / 4), '-eyJ'.repeat(M / 4), ('_eyJ'.repeat(120) + '.' + 'B'.repeat(16000)).repeat(M / 16481),
+    ('/x/' + 'a'.repeat(32)).repeat(M / 35) + ' token', ('token ' + 'b'.repeat(32) + ' ').repeat(M / 39), ('ghp_' + 'A1'.repeat(18) + '-').repeat(M / 41)]
+  for (const text of inputs) {
+    const t0 = Date.now()
+    masks(text)
+    expect(Date.now() - t0).toBeLessThan(1_000)
+  }
 })

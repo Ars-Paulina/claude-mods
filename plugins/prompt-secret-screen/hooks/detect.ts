@@ -1,16 +1,18 @@
 // Credential-shape detection and masking, ported from ~/.claude/hooks/prompt-secret-screen.js.
-// Same patterns, same hex context gate, same standalone high-entropy rule.
+// Same credential kinds; the deliberate differences are commented at PATTERNS and KEYWORD_RE.
 
 // One distinct value per label (for the log), with every place it was matched (for masking).
 export type Hit = { label: string; value: string; ranges: [number, number][] }
 
 // Strong-signal credential shapes. hex32/hex64 are context-gated below (noisy alone).
-// Differences from the old hook: `sk-` and `eyJ` must not follow a word character, so
-// "task-queue-..." is not an OpenAI key, and a run of "eyJeyJ..." has one start, not
-// thousands (the old JWT regex was quadratic there: 300 KB took 28 s).
+// Differences from the old hook, each because a false positive now rewrites the prompt:
+// - openai_key: the part after `sk-` must hold a digit and an uppercase letter (isKeyLike), so
+//   "task-queue-retry" and "desk-booking-widget" are not keys; real keys are random base62.
+// - jwt: `eyJ` must not follow a letter or digit, and each part is bounded. The old regex was
+//   quadratic on runs of "eyJ" (300 KB took 28 s, past the hook budget).
 const PATTERNS: [string, RegExp][] = [
-  ['openai_key', /(?<![A-Za-z0-9_-])sk-(?:proj-)?[A-Za-z0-9_-]{20,}/],
-  ['jwt', /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{6,}/],
+  ['openai_key', /sk-(?:proj-)?[A-Za-z0-9_-]{20,}/],
+  ['jwt', /(?<![A-Za-z0-9])eyJ[A-Za-z0-9_-]{8,256}\.[A-Za-z0-9_-]{8,16384}\.[A-Za-z0-9_-]{6,1024}/],
   ['telegram_bot', /\b\d{6,12}:[A-Za-z0-9_-]{35}\b/],
   ['google_oauth_secret', /GOCSPX-[A-Za-z0-9_-]{20,}/],
   ['supabase_secret_key', /sb_secret_[A-Za-z0-9]{16,}/],
@@ -21,15 +23,44 @@ const PATTERNS: [string, RegExp][] = [
   ['pg_conn_with_pw', /postgres(?:ql)?:\/\/[^:@/\s]+:[^@/\s]{3,}@[^\s"']+/],
 ]
 const HEX: [string, RegExp][] = [['hex64', /\b[a-f0-9]{64}\b/], ['hex32', /\b[a-f0-9]{32}\b/]]
+const isKeyLike = (match: string) => {
+  const body = match.replace(/^sk-(?:proj-)?/, '')
+  return /\d/.test(body) && /[A-Z]/.test(body)
+}
+
 // hex32/hex64 alone are noisy (checksums, SHAs, cache folder names). Screened only when a secret
-// word stands within NEAR characters, as a whole word ("API_KEY" yes, "keyboard" no), and never
-// as a path segment (a '/' right before or after it).
-const KEYWORD_RE = /(?<![A-Za-z])(?:secret|token|key|cron|jwt|passwd|password|bearer)s?(?![A-Za-z])|env\s+add/i
+// word stands within NEAR characters, and never as a segment of a file path.
+// A keyword may be glued to a name before it (accessToken, apiKey, SECRETKEY, API_KEY) but not
+// run on into a lowercase word after it ("keyboard", "tokenizer", "secretary").
+const KEYWORD_RE = /secret|token|key|cron|jwt|passwd|password|bearer|env\s+add/gi
 const NEAR = 40
 
-function isNearKeyword(text: string, start: number, end: number): boolean {
-  if (text[start - 1] === '/' || text[end] === '/') return false
-  return KEYWORD_RE.test(text.slice(Math.max(0, start - NEAR), end + NEAR))
+function hasKeyword(window: string): boolean {
+  for (const m of window.matchAll(KEYWORD_RE)) {
+    let after = m.index + m[0].length
+    if (window[after] === 's') after++
+    if (!/[a-z]/.test(window[after] ?? '')) return true
+  }
+  return false
+}
+
+// A file path segment (/tmp/x/<hex>/y) is a folder name, not a secret. A URL path is not exempt:
+// https://app/api/cron/<hex> is how cron secrets travel. "Token" here = the run between spaces
+// or quotes. Matches come in order, so each token is measured once (a 1 MB path stays linear).
+const STOP = /[\s"'`<>()]/
+function pathChecker(text: string) {
+  let token = { a: -1, b: -1, isUrl: false }
+  return (start: number, end: number): boolean => {
+    if (text[start - 1] !== '/' && text[end] !== '/') return false
+    if (start < token.a || start >= token.b) {
+      let a = start
+      let b = end
+      while (a > 0 && !STOP.test(text[a - 1]!)) a--
+      while (b < text.length && !STOP.test(text[b]!)) b++
+      token = { a, b, isUrl: text.slice(a, b).includes('://') }
+    }
+    return !token.isUrl
+  }
 }
 
 // Shannon entropy in bits per character.
@@ -73,17 +104,26 @@ export function detect(text: string): Hit[] {
     }
     hit.ranges.push([start, start + value.length])
   }
-  const scan = (list: [string, RegExp][], keep: (start: number, end: number) => boolean = () => true) => {
+  const scan = (list: [string, RegExp][], keep: (start: number, end: number, value: string) => boolean = () => true) => {
     for (const [label, re] of list) {
       for (const m of text.matchAll(new RegExp(re.source, 'g'))) {
-        if (keep(m.index, m.index + m[0].length)) add(label, m[0], m.index)
+        if (keep(m.index, m.index + m[0].length, m[0])) add(label, m[0], m.index)
       }
     }
   }
-  scan(PATTERNS)
-  scan(HEX, (start, end) => isNearKeyword(text, start, end))
+  scan(PATTERNS, (start, end, value) => !value.startsWith('sk-') || isKeyLike(value))
+  const isPathSegment = pathChecker(text)
+  scan(HEX, (start, end) => !isPathSegment(start, end) && hasKeyword(text.slice(Math.max(0, start - NEAR), end + NEAR)))
   const t = text.trim()
   if (!hits.length && isStandalone(t)) add('standalone-high-entropy', t, text.indexOf(t))
+  // Once a value is known to be a secret, every copy of it is masked, even a copy that would not
+  // pass a gate alone (a hex far from its keyword, or in a path).
+  for (const hit of hits) {
+    const known = new Set(hit.ranges.map(([s]) => s))
+    for (let i = text.indexOf(hit.value); i !== -1; i = text.indexOf(hit.value, i + 1)) {
+      if (!known.has(i)) hit.ranges.push([i, i + hit.value.length])
+    }
+  }
   return hits
 }
 
