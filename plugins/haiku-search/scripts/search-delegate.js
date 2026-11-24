@@ -23,7 +23,7 @@ const DENY_AT = 6;
 // ponytail: plain split, ignores quoting; a `;` inside a quoted arg can over-split.
 const SEARCH_STEP = /^\s*(?:[A-Za-z_]\w*=\S*\s+)*(grep|rg|find|fd|ag|ack)\s/;
 // A non-recursive grep/rg whose every path operand is an existing regular file is a
-// targeted read of a known file , not a search.
+// targeted read of a known file, not a search.
 // ponytail: whitespace split; quoted patterns with spaces or option values (-m 5)
 // look like non-file paths, so those stay counted (fails toward counting).
 function knownFileGrep(step, cwd) {

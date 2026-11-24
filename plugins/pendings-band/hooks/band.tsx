@@ -6,12 +6,15 @@ import type { PendingsBandRow, PendingsBandView } from '../types'
 const view = atom({ plugin: 'pendings-band', key: 'view' } as const, null)
 const isOpen = atom({ plugin: 'pendings-band', key: 'isOpen' } as const, false)
 
-// python3 on Linux/macOS, the py launcher on Windows. Throws when none starts.
+// python3 on Linux/macOS, the py launcher on Windows. Probed once per module load.
+// Throws when none starts; the next refresh probes again.
+let python: string[] | null = null
 async function findPython($: EngineInterface): Promise<string[]> {
+  if (python) return python
   for (const argv of [['python3'], ['python'], ['py', '-3']]) {
     try {
       const run = await $.process.run([...argv, '-c', 'import sys; assert sys.version_info >= (3, 9)'])
-      if (run.exitCode === 0) return argv
+      if (run.exitCode === 0) return (python = argv)
     } catch {
       // not installed under this name: try the next
     }

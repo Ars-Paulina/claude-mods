@@ -18,6 +18,8 @@ const REGISTRY_PATH = path.join(
 );
 
 const BUILTIN_TYPES = new Set(["Explore", "Plan", "Bash"]);
+// Built-ins otherwise inherit the main model. Plan needs the strongest reasoning,
+// Explore only reads and searches, so the cheapest model is enough.
 const DEFAULT_BUILTIN_MODEL = "sonnet";
 const BUILTIN_FLOOR = { Plan: "opus", Explore: "haiku" };
 
@@ -55,7 +57,6 @@ function run(input) {
     emitEmpty();
     return;
   }
-
 
   if (BUILTIN_TYPES.has(agentType)) {
     emitModel(BUILTIN_FLOOR[agentType] || DEFAULT_BUILTIN_MODEL, params, builtinEffort(agentType, params));
