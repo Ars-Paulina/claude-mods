@@ -1,0 +1,16 @@
+{
+  "name": "notify-focus",
+  "version": "0.1.0",
+  "description": "Per-pane agent state (working / needs input / done) in the status line and tmux border, plus a click-to-pane desktop notification",
+  "author": { "name": "Pedro Malla" },
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Show agent state and notify",
+      "description": "Kill switch. Off draws nothing and sends nothing.",
+      "default": true
+    }
+  },
+  "license": "MIT",
+  "repository": "https://github.com/Ars-Paulina/claude-mods"
+}
