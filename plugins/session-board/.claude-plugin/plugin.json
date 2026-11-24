@@ -1,0 +1,19 @@
+{
+  "name": "session-board",
+  "version": "0.2.0",
+  "description": "One calm card above the prompt: what this session is about, whose turn it is, what is pending and the next step",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Show the session card",
+      "description": "Kill switch. Off draws nothing and runs nothing.",
+      "default": true
+    }
+  },
+  "types": "./types/index.d.ts",
+  "license": "MIT",
+  "repository": "https://github.com/Ars-Paulina/claude-mods"
+}
