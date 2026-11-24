@@ -2,7 +2,7 @@
 
 Replaces secrets with `[MASKED:<label>]` before they are stored. It works in two places:
 
-- **The tool's result** (`tool.call`): the tool's structured record, the copy the transcript keeps as `toolUseResult` (Bash `stdout`/`stderr`, a Read's file text, an MCP result). The engine re-maps the masked record for the model. An errored call (non-zero exit, a failed `psql` printing a DSN) is answered with its masked error text, so the model still reads the error.
+- **The tool's result** (`tool.call`): the tool's structured record, the copy the transcript keeps as `toolUseResult` (Bash `stdout`/`stderr`, a Read's file text, an MCP result). The engine re-maps the masked record for the model. An errored call (non-zero exit, a failed `psql` printing a DSN) is answered with its masked error text, so the model still reads the error. Both the error text and the stored error result are scanned, and the longer masked one is sent.
 - **Every stored row** (`session.append`): tool results, hook context, attachments, deliveries, notes, compaction summaries, notices, `!` command output and the model's own replies.
 
 ## Install
@@ -20,7 +20,7 @@ Four layers, in this order (ported from the `secret-mask.js` PostToolUse hook, l
 3. **Key-name context.** `NAME=value`, `"name": "value"`, `name: value` where the name looks secret (`*_PASSWORD*`, `*_SECRET`, `*_API_KEY`, …) and the value looks literal.
 4. **URL and header passwords.** `scheme://user:PASSWORD@host`, `?password=…`, `Bearer …`.
 
-Strings over 2 MB are withheld whole. Images and any `base64` field (a Read of a PDF or its pages) are left as they are, so the bytes are never corrupted. Inside a tool result, a `document` or `search_result` block that holds a secret is swapped for a one-line text placeholder, because the engine does not keep a changed one.
+Strings over 2 MB are withheld whole. Images and any `base64` field whose value looks like base64 (a Read of a PDF or its pages) are left as they are; text under a `base64` key is still scanned, so the bytes are never corrupted. Inside a tool result, a `document` or `search_result` block that holds a secret is swapped for a one-line text placeholder, because the engine does not keep a changed one.
 
 ## Why a mod (the gain over the hook)
 
@@ -33,16 +33,17 @@ The hook sees only `PostToolUse`, so only tool output. The mod also masks `hook-
 - **Base64 is not scanned**: a secret inside a PDF's bytes is not masked (scanning would corrupt the file).
 - When a result was masked, the hook answers with its own `{ result }`, so core re-maps it and the answer has no `isReadOnly` for later hooks. Nothing in this setup reads `isReadOnly`.
 
-## Live check (2026-11-24)
+## Live check (2026-11-24, commit `ef59205`)
 
-Headless session with only the mod (`claude -p --setting-sources project --plugin-dir plugins/secret-mask --model haiku --allowedTools Bash`). The user settings, and so the old hook, were not loaded. The model ran `python3 -c "print('ghp_'+'a'*36)"`, so the fake token appears only in the tool's output, never in the prompt.
+Headless sessions with only the mod, run on commit `ef59205` (`claude -p --setting-sources project --plugin-dir plugins/secret-mask --model haiku --allowedTools Bash`). The user settings, and so the old hook, were not loaded. The model ran `python3 -c "print('ghp_'+'a'*36)"`, so the fake token appears only in the tool's output, never in the prompt. The third run adds `; false`, so the command fails and its output takes the errored path.
 
-| Session | Mod | Raw fake token lines in `.jsonl` | `[MASKED:github_token]` lines | `toolUseResult.stdout` |
-|---|---|---|---|---|
-| `86904fe2` | on | 0 | 1 | `[MASKED:github_token]` |
-| `1c4ef310` (control) | `SECRET_MASK=off` | 1 | 0 | raw token |
+| Session | Mod | Command | Raw fake token lines in `.jsonl` | `[MASKED:github_token]` lines | `toolUseResult` |
+|---|---|---|---|---|---|
+| `0bb828bb` | on | succeeds | 0 | 1 | `stdout`: `[MASKED:github_token]` |
+| `79e2c731` (control) | `SECRET_MASK=off` | succeeds | 1 | 0 | `stdout`: raw token |
+| `587bb49b` | on | fails (`; false`) | 0 | 1 | `Error: Exit code 1\n[MASKED:github_token]` |
 
-Old hook absent from the masked run: 0 lines for `86904fe2` in `~/.claude/logs/secret-mask.log`, and no `1 secret value(s)` notice in its `.jsonl`.
+Old hook absent from the masked runs: 0 lines for either session in `~/.claude/logs/secret-mask.log` (its last entry predates the runs), and no `1 secret value(s)` notice in their `.jsonl`.
 
 ## Fails closed
 
