@@ -40,7 +40,7 @@ export async function planStatus(io: Io, planPath: string): Promise<string | nul
     return undefined
   }
   const fm = content.match(/^---\n([\s\S]*?)\n---/)
-  const m = (fm ? fm[1] : content).match(/^status:\s*(\S+)/m)
+  const m = (fm?.[1] ?? content).match(/^status:\s*(\S+)/m)
   return m ? m[1] : null
 }
 
@@ -77,7 +77,8 @@ const APPROVED_RE = /^status:\s*approved(?=\s|$)/m
 
 function isFresh(head: string, now: number): boolean {
   const m = head.match(/^approved:\s*(\d{4}-\d{2}-\d{2})/m)
-  return !!m && now - Date.parse(m[1]) <= 30 * DAY_MS
+  const day = m?.[1]
+  return !!day && now - Date.parse(day) <= 30 * DAY_MS
 }
 
 async function countFiles(io: Io, dir: string, want: (name: string, head: string) => boolean): Promise<number> {
