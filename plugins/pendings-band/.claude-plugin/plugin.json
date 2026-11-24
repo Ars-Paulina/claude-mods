@@ -1,0 +1,25 @@
+{
+  "name": "pendings-band",
+  "version": "0.1.0",
+  "description": "One line above the prompt with the next ready pending for the project you are in, read from a local goal ledger (bundled goals.py). Read only.",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Show the pendings band",
+      "description": "Kill switch. Off draws nothing and runs nothing.",
+      "default": true
+    },
+    "projects": {
+      "type": "string",
+      "title": "Folder to ledger project map",
+      "description": "folder=project pairs separated by ';', e.g. ~/code/shop=shop. A folder matches itself and its subfolders, whole folder names only. ~ is your home.",
+      "default": ""
+    }
+  },
+  "types": "./types/index.d.ts",
+  "license": "MIT",
+  "repository": "https://github.com/Ars-Paulina/claude-mods"
+}
