@@ -45,13 +45,31 @@ export function machineOutput(text: string): boolean {
   try { JSON.parse(json); return true } catch { return false }
 }
 
+// The first sentence or line, past any lead marks. Closing bold/italic marks after the stop belong
+// to the sentence ("**Done.** Next…" ends at "Done.").
+function headline(body: string): string {
+  return body.replace(/^[^\p{L}\p{N}]+/u, '').split(/(?<=[.!?][*_]*)\s|\n/)[0]!
+}
+
 // Under a yellow "need you" lead, a headline sentence that itself states finished work ("🟡 Written
 // and committed. One step left is yours.") is still a claim: the lead asks for the next step, the
 // headline reports the done one.
 function headlineClaim(det: Detector, body: string): boolean {
   if (!/^[^\p{L}]*🟡/u.test(body)) return false
-  const head = body.replace(/^[^\p{L}\p{N}]+/u, '').split(/(?<=[.!?])\s|\n/)[0]!
+  const head = headline(body)
   return detectClaim(det, head).phrases.length > 0
+}
+
+// A green "done" lead whose headline sentence reports a finished action in past form ("🟢 Report
+// written.", "🟢 I wrote 5 tests for the Fix button.") is a claim even with no listed phrase. A green
+// lead alone is not enough: "🟢 Run underway" or "🟢 The key goes in that field" report state or advice.
+const DONE_VERB = /(?<![\w'])(?:[a-z]{2,}ed|written|wrote|made|built|sent|ran)(?![\w'])/gi
+
+function greenHeadline(det: Detector, body: string): boolean {
+  if (!/^[^\p{L}]*🟢/u.test(body)) return false
+  const head = headline(body)
+  for (const m of head.matchAll(DONE_VERB)) if (!negated(det, head, m.index!)) return true
+  return false
 }
 
 export function detectClaim(det: Detector, text: string): Claim {
@@ -69,7 +87,7 @@ export function detectClaim(det: Detector, text: string): Claim {
       if (!negated(det, body, start) && !out.phrases.includes(p)) out.phrases.push(p)
     }
   }
-  out.claim = out.phrases.length > 0 && (!statusReply(body) || headlineClaim(det, body))
+  out.claim = (out.phrases.length > 0 && (!statusReply(body) || headlineClaim(det, body))) || greenHeadline(det, body)
   out.files = [...new Set(body.match(/(?<![\w/.-])(?:[\w.-]+\/)*[\w-]+\.[A-Za-z][\w]{0,5}(?![\w/])/g) ?? [])]
     .filter(f => !/^\d+(\.\d+)+$/.test(f) && !/^(e\.g|i\.e|etc)\./i.test(f))
   out.shas = [...new Set(body.match(/\b[0-9a-f]{7,40}\b/g) ?? [])].filter(s => /\d/.test(s) && /[a-f]/.test(s))

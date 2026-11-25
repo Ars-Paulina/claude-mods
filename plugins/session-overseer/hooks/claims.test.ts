@@ -71,3 +71,17 @@ test('claims: a yellow lead whose headline states finished work stays a claim', 
   expect(detectClaim(det, '🟡 Not committed yet. Waiting on review.').claim).toBe(false)
   expect(detectClaim(det, '🔴 Blocked at step 3, steps 1-2 done and committed.').claim).toBe(false)
 })
+
+test('claims: a green lead whose headline reports a finished action in past form is a claim', () => {
+  expect(detectClaim(det, '🟢 Report written. File: `notes/report.md`.').claim).toBe(true)
+  expect(detectClaim(det, '🟢 **I wrote 5 tests for the parser. All 5 pass.** Details below.').claim).toBe(true)
+  expect(detectClaim(det, '🟢 Goals extracted and saved. {"goals": 4}').claim).toBe(true)
+  // A green lead with no past-form action in the headline (state, advice), a negated one, a past
+  // form only after the headline, a question, or a past form under a non-green lead: not a claim.
+  expect(detectClaim(det, '🟢 Run 42 underway, now on step 5: scan running.').claim).toBe(false)
+  expect(detectClaim(det, '🟢 **The legacy secret goes in that field.** Not the one you pasted.').claim).toBe(false)
+  expect(detectClaim(det, '🟢 Not edited yet, the review comes first.').claim).toBe(false)
+  expect(detectClaim(det, '🟢 All clear. Earlier I edited the config.').claim).toBe(false)
+  expect(detectClaim(det, '🟢 Report written. Want me to post it?').claim).toBe(false)
+  expect(detectClaim(det, 'Report written to the scratch folder.').claim).toBe(false)
+})
