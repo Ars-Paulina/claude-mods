@@ -33,10 +33,31 @@ export function statusReply(text: string): boolean {
   return STATUS_LEAD.test(text.replace(/^[^\p{L}\p{Extended_Pictographic}]+/u, ''))
 }
 
+// A reply that IS machine output (a JSON object or array, bare or as one fenced block, before an
+// optional footer such as `⟦AB12:345⟧` or `[10:42 PM]`) is a side output: memory ops, a session
+// summary, a score. Words inside its strings are data, not claims.
+const FOOTER = /(?:\s*(?:⟦[^⟧]*⟧|\[\d{1,2}:\d{2}\s*[AaPp]\.?[Mm]\.?\]))+\s*$/u
+
+export function machineOutput(text: string): boolean {
+  const body = text.replace(FOOTER, '').trim()
+  const json = (body.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/) ?? [null, body])[1]!
+  if (!/^[{[]/.test(json)) return false
+  try { JSON.parse(json); return true } catch { return false }
+}
+
+// Under a yellow "need you" lead, a headline sentence that itself states finished work ("🟡 Written
+// and committed. One step left is yours.") is still a claim: the lead asks for the next step, the
+// headline reports the done one.
+function headlineClaim(det: Detector, body: string): boolean {
+  if (!/^[^\p{L}]*🟡/u.test(body)) return false
+  const head = body.replace(/^[^\p{L}\p{N}]+/u, '').split(/(?<=[.!?])\s|\n/)[0]!
+  return detectClaim(det, head).phrases.length > 0
+}
+
 export function detectClaim(det: Detector, text: string): Claim {
   const body = text.trim()
   const out: Claim = { claim: false, phrases: [], files: [], shas: [] }
-  if (!body || /\?\s*$/.test(body)) return out
+  if (!body || /\?\s*$/.test(body) || machineOutput(body)) return out
   const taken: [number, number][] = []
   for (const { p, re } of det.phrases) {
     re.lastIndex = 0
@@ -48,7 +69,7 @@ export function detectClaim(det: Detector, text: string): Claim {
       if (!negated(det, body, start) && !out.phrases.includes(p)) out.phrases.push(p)
     }
   }
-  out.claim = out.phrases.length > 0 && !statusReply(body)
+  out.claim = out.phrases.length > 0 && (!statusReply(body) || headlineClaim(det, body))
   out.files = [...new Set(body.match(/(?<![\w/.-])(?:[\w.-]+\/)*[\w-]+\.[A-Za-z][\w]{0,5}(?![\w/])/g) ?? [])]
     .filter(f => !/^\d+(\.\d+)+$/.test(f) && !/^(e\.g|i\.e|etc)\./i.test(f))
   out.shas = [...new Set(body.match(/\b[0-9a-f]{7,40}\b/g) ?? [])].filter(s => /\d/.test(s) && /[a-f]/.test(s))

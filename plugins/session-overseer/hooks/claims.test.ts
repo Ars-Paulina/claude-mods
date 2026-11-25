@@ -48,3 +48,26 @@ test('claims: a reply that opens with a blocked / waiting / in-progress status i
   expect(detectClaim(det, 'Fixed the bug. Next step is blocked on review.').claim).toBe(true)
   expect(detectClaim(det, 'Stopwatch feature shipped.').claim).toBe(true)
 })
+
+test('claims: a reply that is machine output (JSON, bare or fenced, footer allowed) is not a claim', () => {
+  for (const t of [
+    '{"ops":[{"action":"create","title":"Fix verified and committed"}]}',
+    '```json\n{ "closing_state": "work complete and shipped" }\n```',
+    '```json { "ops": [] } ``` ⟦AB12:345⟧',
+    '[{"status":"done"}] [10:42 PM]',
+  ]) expect(detectClaim(det, t).claim).toBe(false)
+  // Not machine output: a markdown link or checklist, prose around a json block, broken JSON.
+  expect(detectClaim(det, '[x] Parser fixed and committed.').claim).toBe(true)
+  expect(detectClaim(det, '[the PR](https://x/1) is shipped.').claim).toBe(true)
+  expect(detectClaim(det, '```json\n{"a":1}\n```\nCommitted 3b6f4d3.').claim).toBe(true)
+  expect(detectClaim(det, '{ not json, but the fix is done').claim).toBe(true)
+})
+
+test('claims: a yellow lead whose headline states finished work stays a claim', () => {
+  expect(detectClaim(det, '🟡 **Written and committed. One step left is yours.** Run the deploy.').claim).toBe(true)
+  expect(detectClaim(det, '🟡 Need you — I built all of it and it is committed. Approve the push?\nDetails below.').claim).toBe(true)
+  // Done-words only after the headline, a negated headline, or a red / blocked lead: still not a claim.
+  expect(detectClaim(det, '🟡 Need your OK before I push. The fix is done.').claim).toBe(false)
+  expect(detectClaim(det, '🟡 Not committed yet. Waiting on review.').claim).toBe(false)
+  expect(detectClaim(det, '🔴 Blocked at step 3, steps 1-2 done and committed.').claim).toBe(false)
+})
