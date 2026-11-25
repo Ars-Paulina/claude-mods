@@ -6,6 +6,12 @@
   },
   "plugins": [
     {
+      "name": "auto-proceed",
+      "source": "./plugins/auto-proceed",
+      "description": "When a reply ends by offering a safe next step, tells Claude to do it instead of waiting",
+      "version": "0.1.0"
+    },
+    {
       "name": "flow-board",
       "source": "./plugins/flow-board",
       "description": "One line above the prompt: background agents, git dirty/ahead, PR checks, GSD state and whether /clear is safe. Adds /park and a one-press GSD phase handoff button.",
