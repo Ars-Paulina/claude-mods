@@ -49,6 +49,12 @@ export const isCheckCommand = (command: string) =>
   command.split(/&&|\|\||[;|&\n()]/).some(seg => CHECK_HEAD.test(seg.trim().replace(LEAD, '')))
 
 /**
+ * Does the claim assert a check result ("all tests pass", "build passes", "all green")? Such a claim
+ * needs a passing check run even when the session edited nothing.
+ */
+export const claimsCheckResult = (phrases: string[]) => phrases.some(p => /\b(tests?|tested|build|lint|checks?|green|passing)\b/i.test(p))
+
+/**
  * Freshness: a recognized check command exited 0 after the last edit to the claimed files (all
  * edited files when the claim names none), in any turn since the contract.
  */

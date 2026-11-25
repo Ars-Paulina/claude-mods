@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { hasChecks, isCheckCommand, isFresh, taskType } from './contract.ts'
+import { claimsCheckResult, hasChecks, isCheckCommand, isFresh, taskType } from './contract.ts'
 import { makeDetector } from './claims.ts'
 import { compilePins } from './pins.ts'
 import { Observer } from './observer.ts'
@@ -52,4 +52,37 @@ test('check command at command position only: a tool name as an argument is not 
   for (const cmd of ['cat vitest.config.ts', 'ls tests/pytest', 'git log -- jest.config.js', 'grep -r eslint .', 'echo pnpm test', 'vim tsconfig.json']) expect(isCheckCommand(cmd)).toBe(false)
   // So reading a test config after an edit does not make a "tests pass" claim fresh.
   expect(isFresh([{ seq: 3, command: 'cat vitest.config.ts', ok: true }], [{ seq: 2, file: '/r/a.ts' }], [])).toBe(false)
+})
+
+test('no edits, repo with checks: "all tests pass" with no check run -> would block; with a passing run or a plain "done" -> none', async () => {
+  const mk = () => {
+    const o = new Observer({ detector: makeDetector({ phrases: ['all tests pass', 'done'], negators: [] }), pins: compilePins([]), git: async () => ({ exitCode: 0, stdout: '' }), sleep: () => new Promise(() => {}) })
+    o.contract = c
+    return o
+  }
+  const x = { cwd: '/r', ccVersion: '2.1.331', tested: '2.1' }
+  let o = mk()
+  o.tool('Bash', { command: 'date' }, { isError: false, output: '' })
+  let claim = (await o.turn('All tests pass, done.', x)).find(r => r.signal === 'claim')!
+  expect(claim.would).toBe('block')
+  expect(claim.detail.task_type).toBe('read-only')
+  expect(claim.detail.missing).toEqual(['test run'])
+  o = mk()
+  o.tool('Bash', { command: 'pnpm test' }, { isError: false, output: '3 passed' })
+  expect((await o.turn('All tests pass, done.', x)).find(r => r.signal === 'claim')!.would).toBe('none')
+  o = mk()
+  o.tool('Bash', { command: 'date' }, { isError: false, output: '' })
+  expect((await o.turn('Done.', x)).find(r => r.signal === 'claim')!.would).toBe('none')
+  // A repo without checks keeps the old read-only rule.
+  o = mk()
+  o.contract = { ...c, hasChecks: false }
+  o.tool('Bash', { command: 'date' }, { isError: false, output: '' })
+  expect((await o.turn('All tests pass, done.', x)).find(r => r.signal === 'claim')!.would).toBe('none')
+})
+
+test('claimsCheckResult: check-result phrases only', () => {
+  expect(claimsCheckResult(['all tests pass'])).toBe(true)
+  expect(claimsCheckResult(['build passes'])).toBe(true)
+  expect(claimsCheckResult(['all green'])).toBe(true)
+  expect(claimsCheckResult(['done', 'fixed', 'committed'])).toBe(false)
 })
