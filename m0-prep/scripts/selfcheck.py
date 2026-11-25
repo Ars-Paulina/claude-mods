@@ -2,7 +2,7 @@
 """M0 prep self-check: asserts the deliverable counts. Exit 0 = all pass, 1 = a check failed.
 Run: python3 m0-prep/scripts/selfcheck.py   (needs data/ built by build_all.sh; data/ is gitignored)
 """
-import csv, json, os, re, subprocess, sys
+import csv, hashlib, json, os, re, subprocess, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
 
@@ -51,6 +51,22 @@ def main():
     check('no raw secret patterns in data/', not hit, hit)
     tracked = subprocess.run(['git', '-C', C.ROOT, 'ls-files', '--', 'data'], capture_output=True, text=True).stdout.strip()
     check('data/ not tracked by git (repo is public)', tracked == '', tracked[:80])
+    # write-once guard: a labeled sheet must survive --regen
+    with tempfile.TemporaryDirectory() as td:
+        t = os.path.join(td, 'x.csv')
+        open(t, 'w').write('session_id,label,pedro_notes\na,false done,\n')
+        check('guard refuses labeled file even with --regen', C.guard_write(t, True, False) is False)
+        open(t, 'w').write('session_id,label,pedro_notes\na,,\n')
+        check('guard keeps unlabeled file unless --regen', C.guard_write(t, False, False) is False and C.guard_write(t, True, False) is True)
+    # determinism: a full rerun of build_all.sh must leave the sample and the sheet byte-identical
+    if '--no-rerun' not in sys.argv:
+        h = lambda n: hashlib.sha256(open(os.path.join(C.DATA, n), 'rb').read()).hexdigest()
+        names = ('sessions.json', 'claimed-vs-git.csv', 'canary-sample.csv')
+        before = {n: h(n) for n in names}
+        r = subprocess.run([os.path.join(C.HERE, 'build_all.sh')], capture_output=True, text=True)
+        check('build_all.sh rerun exits 0', r.returncode == 0, r.stderr.strip().splitlines()[-1:] if r.returncode else '')
+        for n in names:
+            check('rerun leaves %s byte-identical' % n, h(n) == before[n])
     print('SELFCHECK', 'OK' if not fails else 'FAILED: ' + ', '.join(fails))
     return 1 if fails else 0
 

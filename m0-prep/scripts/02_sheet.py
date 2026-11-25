@@ -5,6 +5,10 @@ data/claimed-vs-git.csv   pointers + counts + git facts. `label` and `pedro_note
                           (ok / false done / loop / stale / old-hook-false-positive).
 data/sheet-view.md        local reading aid with masked last-claim excerpts. Never committed (FR-21).
 Columns starting hint_ are machine hints, not labels.
+
+WRITE-ONCE: an existing claimed-vs-git.csv is kept (rebuilding re-reads live git/transcripts and drifts).
+`--regen` rebuilds it, but never over a file that has any label/old_hook_false_positive/pedro_notes text;
+that needs `--discard-labels` (destroys them). Refusals are printed loudly; exit stays 0.
 """
 import csv, datetime, os, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -45,6 +49,9 @@ def git_facts(repo, start, end):
 
 
 def main():
+    out_csv = os.path.join(C.DATA, 'claimed-vs-git.csv')
+    if not C.guard_write(out_csv, '--regen' in sys.argv, '--discard-labels' in sys.argv):
+        return
     sess = C.load_json('sessions.json')['sessions']
     idx = C.transcript_index()
     rows_out, view = [], ['# Local reading aid (masked excerpts). DO NOT COMMIT.\n']
@@ -91,7 +98,7 @@ def main():
         txt = next((t for ln, r, t in rows if ln == last), '')[:220].replace('\n', ' ')
         view.append('## %s  %s  %s\n- git window commits: %d, remote: %d, hints: %s\n- last claim L%s: %s\n' % (
             sid[:8], m['stratum'], m['project'], len(shas), remote, rec['hint_claim_vs_git'] or '-', last, txt))
-    with open(os.path.join(C.DATA, 'claimed-vs-git.csv'), 'w', newline='') as fh:
+    with open(out_csv, 'w', newline='') as fh:
         w = csv.DictWriter(fh, fieldnames=COLS)
         w.writeheader()
         w.writerows(rows_out)

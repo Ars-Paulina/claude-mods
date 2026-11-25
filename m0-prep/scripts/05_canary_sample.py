@@ -2,6 +2,7 @@
 """Canary precision sample: 20 of the canary ALERT events in ~/.claude/logs/canary-check.log (gap G1-2).
 Spread over months, <=2 per session. Output data/canary-sample.csv, labels BLANK for Pedro:
   label = real-stale (the session was degrading around then) | false-alarm | unclear
+WRITE-ONCE like 02_sheet.py: kept if present; --regen rebuilds; labeled file needs --discard-labels.
 """
 import csv, collections, os, random, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -13,6 +14,9 @@ COLS = ['alert_id', 'ts_utc', 'session_id', 'project_folder', 'transcript_found'
 
 
 def main():
+    out_csv = os.path.join(C.DATA, 'canary-sample.csv')
+    if not C.guard_write(out_csv, '--regen' in sys.argv, '--discard-labels' in sys.argv):
+        return
     rng = random.Random(C.SEED + 3)
     idx = C.transcript_index()
     can = C.canary_stats()
@@ -37,7 +41,7 @@ def main():
                      'stop_event': int(e['stop_event']), 'alerts_in_session': can[s]['alerts'],
                      'session_rows': f['rows'], 'compactions': f['compactions'],
                      'view_cmd': '~/.claude/bin/fsearch --show %s --tail 60' % s[:8], 'label': '', 'pedro_notes': ''})
-    with open(os.path.join(C.DATA, 'canary-sample.csv'), 'w', newline='') as fh:
+    with open(out_csv, 'w', newline='') as fh:
         w = csv.DictWriter(fh, fieldnames=COLS)
         w.writeheader()
         w.writerows(rows)

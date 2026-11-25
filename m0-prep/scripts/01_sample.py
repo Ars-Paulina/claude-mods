@@ -6,8 +6,16 @@ Strata (fixed seed, one session = one stratum, <=3 per project folder per stratu
   B  canary-silent    15  sessions the canary watched (log lines) but never alerted
   C  git-heavy-done   10  drawn from a random pool, scored by git-commit results x done-claims
 Output: data/sessions.json  (pointers + metadata only; no transcript text)
+
+WRITE-ONCE: if data/sessions.json exists it is kept untouched (Pedro's labels key off these ids).
+`--resample` builds a new one. Everything time-dependent is pinned to `cutoff_epoch` recorded in the file:
+the age filters and the canary-log read use the cutoff, not "now", and all candidate lists are sorted before
+the seeded shuffle. Why the first run drifted: age filters used time.time(), new/resumed sessions changed the
+pools, glob order fed the shuffle, and the canary log kept growing; so a rerun drew different ids.
+(A resample at a later cutoff still differs from an earlier one, by design; rerun with the same
+cutoff via --cutoff EPOCH to reproduce a file, as long as no transcript older than the cutoff was edited.)
 """
-import os, sys, time, random, collections
+import datetime, os, sys, time, random, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C
 
@@ -36,16 +44,21 @@ def spread(cands, n, rng, cap=CAP_PER_PROJECT):
 
 
 def main():
+    path = os.path.join(C.DATA, 'sessions.json')
+    if os.path.exists(path) and '--resample' not in sys.argv:
+        print('kept existing sessions.json (write-once; --resample to rebuild)', file=sys.stderr)
+        return
     rng = random.Random(C.SEED)
-    idx, can = C.transcript_index(), C.canary_stats()
-    now = time.time()
-    ok = {s: v for s, v in idx.items()
+    now = int(sys.argv[sys.argv.index('--cutoff') + 1]) if '--cutoff' in sys.argv else int(time.time())
+    until = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+    idx, can = C.transcript_index(), C.canary_stats(until)
+    ok = {s: v for s, v in sorted(idx.items())
           if MIN_SIZE <= v[2] <= MAX_SIZE and now - v[1] > 3 * 3600 and now - v[1] < MAX_AGE_DAYS * 86400
           and C.project_of(v[0]) != '-home-pedro'}  # '-home-pedro' = scratch/headless home sessions
     meta = lambda s: {'id': s, 'project': C.project_of(idx[s][0]), 'mtime': int(idx[s][1]), 'size': idx[s][2]}
-    A = [meta(s) for s in ok if can.get(s, {}).get('alerts', 0) > 0]
-    B = [meta(s) for s in ok if s in can and can[s]['alerts'] == 0 and can[s]['misses'] >= 3]
-    rest = [s for s in ok if s not in {a['id'] for a in A} | {b['id'] for b in B}]
+    A = [meta(s) for s in sorted(ok) if can.get(s, {}).get('alerts', 0) > 0]
+    B = [meta(s) for s in sorted(ok) if s in can and can[s]['alerts'] == 0 and can[s]['misses'] >= 3]
+    rest = [s for s in sorted(ok) if s not in {a['id'] for a in A} | {b['id'] for b in B}]
     rng.shuffle(rest)
     print('pools: A=%d B=%d rest=%d' % (len(A), len(B), len(rest)), file=sys.stderr)
     chosen = {'A': spread(A, N['A'], rng), 'B': spread(B, N['B'], rng)}
@@ -71,7 +84,7 @@ def main():
             m['canary_misses'] = can.get(m['id'], {}).get('misses', 0)
             m.pop('score', None)
             out.append(m)
-    C.save_json('sessions.json', {'seed': C.SEED, 'strata': N, 'cap_per_project': CAP_PER_PROJECT,
+    C.save_json('sessions.json', {'seed': C.SEED, 'cutoff_epoch': now, 'cutoff_utc': until, 'strata': N, 'cap_per_project': CAP_PER_PROJECT,
                                   'pool_sizes': {'A': len(A), 'B': len(B), 'C_scored': len(scored)},
                                   'sessions': out})
     print('sessions:', len(out), {k: len(v) for k, v in chosen.items()}, file=sys.stderr)

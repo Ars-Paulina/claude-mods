@@ -3,7 +3,7 @@
 Transcripts are read ONLY through ~/.claude/bin/fsearch (it masks secrets).
 Nothing here opens a .jsonl; we only list/stat files to find session ids.
 """
-import glob, os, re, subprocess, json, collections
+import glob, os, re, subprocess, json, collections, sys
 
 HOME = os.path.expanduser('~')
 FSEARCH = os.path.join(HOME, '.claude', 'bin', 'fsearch')
@@ -44,12 +44,14 @@ def transcript_index():
     return idx
 
 
-def canary_stats():
+def canary_stats(until=None):
     """session -> {'alerts': n, 'misses': n, 'alert_lines': [(ts, window, reason)]}"""
     out = collections.defaultdict(lambda: {'alerts': 0, 'misses': 0, 'alert_events': []})
     for ln in open(CANARY_LOG):
         m = re.search(r'session=(\S+)', ln)
         if not m:
+            continue
+        if until and ln.split()[0] > until:     # log grows; freeze it at the sample cutoff
             continue
         d = out[m.group(1)]
         if ' ALERT ' in ln:
@@ -176,3 +178,26 @@ def extract(rows):
     f['last_test'] = max((t['line'] for t in f['tests']), default=None)
     f['tests_after_last_edit'] = (f['last_test'] is not None and (f['last_edit'] is None or f['last_test'] > f['last_edit']))
     return f
+
+
+LABEL_COLS = ('label', 'old_hook_false_positive', 'pedro_notes')
+
+
+def guard_write(path, regen, discard_labels):
+    """Write-once guard for sheets Pedro fills in. Returns True if the caller may write `path`.
+    Missing file -> write. Existing -> keep unless --regen; with labels present keep even with --regen
+    unless --discard-labels. Always prints why (loud, exit stays 0 so build_all continues)."""
+    import csv
+    if not os.path.exists(path):
+        return True
+    name = os.path.basename(path)
+    with open(path, newline='') as f:
+        labeled = any((r.get(c) or '').strip() for r in csv.DictReader(f) for c in LABEL_COLS)
+    if labeled and not discard_labels:
+        print('REFUSING to overwrite %s: it has Pedro labels/notes (use --discard-labels to destroy them)' % name,
+              file=sys.stderr)
+        return False
+    if not regen and not discard_labels:
+        print('kept existing %s (write-once; --regen to rebuild)' % name, file=sys.stderr)
+        return False
+    return True

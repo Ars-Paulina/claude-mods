@@ -43,6 +43,12 @@ Shows up as stratum in `sessions.json` and the sheet. "Fired" is defined by the 
 - **Labels in both fixtures were set by a Claude review pass, not by Pedro** (`labeled_by` field).
 - Approval fixture applies the FR-14 rule: action + target, or a bare yes/ok/go bound to the question directly before; else not an approval.
 
+## Write-once rule (labels are safe)
+`sessions.json`, `claimed-vs-git.csv` and `canary-sample.csv` are never rebuilt by a plain rerun. `--resample` /
+`--regen` rebuild them but refuse over any file holding Pedro's labels (`--discard-labels` destroys them).
+`sessions.json` records `cutoff_epoch`; the sampler uses it instead of "now", so `01_sample.py --resample --cutoff <epoch>` reproduces it.
+First-run drift came from: age filters on the live clock, new sessions entering the pools, unsorted glob order feeding the shuffle, and the canary log growing.
+
 ## Rebuild / check
 ```
 m0-prep/scripts/build_all.sh            # sample, sheet, fixtures, canary sample, self-check (~4 min)
