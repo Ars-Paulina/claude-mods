@@ -10,12 +10,20 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 function fakeGit(changed: string[], commits: string[]) {
   return async (argv: string[]) => {
-    if (argv[1] === 'status') return { exitCode: 0, stdout: changed.map(f => ` M ${f}`).join('\n') }
-    if (argv[1] === 'log') return { exitCode: 0, stdout: '' }
+    if (argv[1] === 'status') return { exitCode: 0, stdout: changed.map(f => ` M ${f}\0`).join('') }
+    if (argv.includes('log')) return { exitCode: 0, stdout: '' }
     if (argv[1] === 'cat-file') return { exitCode: commits.includes(argv[3]!.replace('^{commit}', '')) ? 0 : 1, stdout: '' }
     return { exitCode: 1, stdout: '' }
   }
 }
+
+test('status -z: a path with a space and a rename are read raw', async () => {
+  const run = async (argv: string[]) => argv[1] === 'status'
+    ? { exitCode: 0, stdout: ' M my file.ts\0R  new.ts\0old.ts\0' }
+    : { exitCode: 0, stdout: '' }
+  const r = await gitCheck(run, sleep, '/r', { files: ['my file.ts', 'new.ts', 'old.ts'], shas: [] }, 'x', ['/r/my file.ts', '/r/new.ts'])
+  expect(r.files).toEqual({ 'my file.ts': 'match', 'new.ts': 'match', 'old.ts': 'missing' })
+})
 
 test('present -> match, absent -> missing, authorship from own edits', async () => {
   const run = fakeGit(['src/a.ts', 'src/b.ts'], ['abc1234'])
@@ -30,9 +38,16 @@ test('present -> match, absent -> missing, authorship from own edits', async () 
 
 test('slow git -> unknown in under 300 ms; git error -> unknown', async () => {
   const t0 = Date.now()
-  const slow = await gitCheck(() => new Promise(() => {}), sleep, '/r', { files: ['a.ts'], shas: [] }, 'x', [])
+  let calls = 0
+  let release = () => {}
+  const slowRun = () => { calls++; return new Promise<{ exitCode: number; stdout: string }>(r => { release = () => r({ exitCode: 0, stdout: '' }) }) }
+  const slow = await gitCheck(slowRun, sleep, '/r', { files: ['a.ts'], shas: ['abc1234'] }, 'x', [])
   expect(slow.status).toBe('unknown')
   expect(Date.now() - t0).toBeLessThan(300)
+  // The race is lost: once the hung call returns, no further git call starts.
+  release()
+  await sleep(20)
+  expect(calls).toBe(1)
   const err = await gitCheck(async () => ({ exitCode: 128, stdout: '' }), sleep, '/r', { files: ['a.ts'], shas: [] }, 'x', [])
   expect(err.status).toBe('unknown')
 })
