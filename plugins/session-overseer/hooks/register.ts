@@ -130,8 +130,8 @@ export const register: Register = (on, options) => {
       await observe($, 'prompt.submit', undefined, async ({ obs, now }) => {
         await freezeContract($, obs, now)
         const ts = new Date(now).toISOString()
-        const rec = obs.prompt(e.text, ts, `${now}-${++promptSeq}`)
-        return rec ? [{ op: 'approval', rec }] : []
+        const { rec, rows } = obs.prompt(e.text, ts, `${now}-${++promptSeq}`)
+        return rec ? [{ op: 'approval', rec }, ...rowsOp(rows)] : []
       })
     }
     return next(e)

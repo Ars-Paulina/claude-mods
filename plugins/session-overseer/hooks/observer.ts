@@ -59,9 +59,13 @@ export class Observer {
     if (rank.indexOf(row.would) > rank.indexOf(this.worst)) this.worst = row.would
   }
 
-  /** The person's prompt. Returns the approval record to store (text still unmasked: the store masks it). */
-  prompt(text: string, ts: string, messageId: string): ApprovalRecord | null {
-    return approvalRecord(text, ts, messageId)
+  /**
+   * The person's prompt. Returns the approval record to store (text still unmasked: the store
+   * masks it) and a pointer-only `approval` log row.
+   */
+  prompt(text: string, ts: string, messageId: string): { rec: ApprovalRecord | null; rows: Row[] } {
+    const rec = approvalRecord(text, ts, messageId)
+    return { rec, rows: rec ? [{ event: 'prompt.submit', signal: 'approval', would: 'none', detail: { message_id: messageId } }] : [] }
   }
 
   /** A finished tool call on the main loop. */
