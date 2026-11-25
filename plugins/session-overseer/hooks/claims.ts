@@ -24,6 +24,15 @@ function negated(det: Detector, text: string, at: number): boolean {
   return words.slice(-NEG_WINDOW).some(w => det.negators.has(w))
 }
 
+// A reply that opens by reporting a blocked, waiting or in-progress state (red/yellow/hourglass
+// status mark, or a lead word such as "Stop", "Blocked", "Need you") is a status report, not a
+// done-claim, even when it names finished sub-steps with done-words.
+const STATUS_LEAD = /^(?:🔴|🟡|⏳|(?:stop|blocked|checkpoint|needs? you|waiting|awaiting|on hold|paused)\b)/iu
+
+export function statusReply(text: string): boolean {
+  return STATUS_LEAD.test(text.replace(/^[^\p{L}\p{Extended_Pictographic}]+/u, ''))
+}
+
 export function detectClaim(det: Detector, text: string): Claim {
   const body = text.trim()
   const out: Claim = { claim: false, phrases: [], files: [], shas: [] }
@@ -39,7 +48,7 @@ export function detectClaim(det: Detector, text: string): Claim {
       if (!negated(det, body, start) && !out.phrases.includes(p)) out.phrases.push(p)
     }
   }
-  out.claim = out.phrases.length > 0
+  out.claim = out.phrases.length > 0 && !statusReply(body)
   out.files = [...new Set(body.match(/(?<![\w/.-])(?:[\w.-]+\/)*[\w-]+\.[A-Za-z][\w]{0,5}(?![\w/])/g) ?? [])]
     .filter(f => !/^\d+(\.\d+)+$/.test(f) && !/^(e\.g|i\.e|etc)\./i.test(f))
   out.shas = [...new Set(body.match(/\b[0-9a-f]{7,40}\b/g) ?? [])].filter(s => /\d/.test(s) && /[a-f]/.test(s))

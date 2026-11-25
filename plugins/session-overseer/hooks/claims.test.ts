@@ -30,3 +30,21 @@ test('claims: phrases, negation, questions, files and shas', () => {
   expect(detectClaim(det, 'The undone work is listed below.').claim).toBe(false)
   expect(detectClaim(det, 'Version 2.1.331 is installed.').files).toEqual([])
 })
+
+test('claims: a reply that opens with a blocked / waiting / in-progress status is not a claim', () => {
+  for (const t of [
+    '🔴 Blocked at step 3. Steps 1-2 done and committed.',
+    '🟡 Need your OK before I push. The fix is done.',
+    '⏳ Review started. Done so far: the lint step.',
+    '**STOP — waiting for your go.** Fix A is done.',
+    'Blocked: the deploy needs a login. Tests pass locally.',
+    'Need you to run this command. Everything else is done.',
+    '╔══╗ ║ CHECKPOINT: verification required ║ Step 1 done.',
+  ]) expect(detectClaim(det, t).claim).toBe(false)
+  // Phrases are still reported, so the log keeps what was said.
+  expect(detectClaim(det, '🔴 Blocked. Step 1 done.').phrases).toEqual(['done'])
+  // A green or plain lead keeps the claim; a status word later in the reply does not cancel it.
+  expect(detectClaim(det, '🟢 Done. Tests pass, committed 3b6f4d3.').claim).toBe(true)
+  expect(detectClaim(det, 'Fixed the bug. Next step is blocked on review.').claim).toBe(true)
+  expect(detectClaim(det, 'Stopwatch feature shipped.').claim).toBe(true)
+})
