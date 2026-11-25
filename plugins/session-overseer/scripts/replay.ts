@@ -1,18 +1,27 @@
-// Golden-transcript replay (FR-19): run the observer over a hand-written event list and diff the
-// rows it logs against the expected ones. Exit 0 = same, 1 = differs or the file is broken.
+// Golden-transcript replay (FR-19): feed a hand-written list of engine events through the mod's
+// real handlers (hooks/register.ts), the classic command hooks (scripts/classic.cjs) and the store
+// bridge (scripts/store.cjs), then diff the rows written to the log against the expected ones. A
+// renamed event field or a changed bridge payload changes the rows, so the replay fails.
+// Exit 0 = same, 1 = differs, an event was changed on its way through, or the file is broken.
 // `--stamp` on a pass writes Claude Code's major.minor to <state dir>/tested-version, which the mod
 // compares against on every turn (grey when they differ or nothing is stamped).
 //
 //   node scripts/replay.ts [golden.json] [--stamp] [--cc-version 2.1.331] [--state-dir DIR] [--print]
 
-import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 
-import { Observer } from '../hooks/observer.ts'
+import { register } from '../hooks/register.ts'
 import type { Row } from '../hooks/observer.ts'
 import { majorMinor } from '../hooks/blind.ts'
-import { PLUGIN, args, loadDeps } from './lib.ts'
+import { PLUGIN, args } from './lib.ts'
+
+const require = createRequire(import.meta.url)
+const { handle } = require('./classic.cjs') as { handle: (kind: string, input: object, env: object, now: number) => string }
 
 const HELP = `usage: node scripts/replay.ts [golden.json] [--stamp] [--cc-version X.Y.Z] [--state-dir DIR] [--print]
   golden.json   default: test/fixtures/golden-transcript.json
@@ -21,29 +30,95 @@ const HELP = `usage: node scripts/replay.ts [golden.json] [--stamp] [--cc-versio
   --state-dir   default: $OVERSEER_STATE_DIR or ~/.claude/state/overseer
   --print       print the rows the replay produced (to write a new golden file by hand)`
 
+/**
+ * One engine event. `hook` events go through register.ts with the payload `e` exactly as the
+ * engine sends it; a `tool.call` also fires the classic PostToolUse hook (as the engine does)
+ * unless `classic: false`. `classic` events call scripts/classic.cjs with `input`.
+ */
 export type GoldenEvent =
-  | { type: 'prompt'; text: string }
-  | { type: 'tool'; tool: string; input: Record<string, unknown>; isError?: boolean; output?: string }
-  | { type: 'turn'; answer: string; rawTools?: number; compactions?: number }
+  | { hook: 'session.start' | 'prompt.submit' | 'turn.complete'; e: Record<string, unknown> }
+  | { hook: 'tool.call'; e: Record<string, unknown>; result: Record<string, unknown>; classic?: boolean }
+  | { classic: 'tool' | 'compact'; input?: Record<string, unknown> }
 
-/** Canned git answers keyed by the argv joined with spaces; anything else exits 128 (unknown). */
-export type CannedGit = Record<string, { exitCode: number; stdout: string }>
+/** Canned answers for the commands the mod runs, matched by the longest key the argv starts with. */
+export type Canned = Record<string, { exitCode: number; stdout: string }>
 
-export type Golden = { cc_version: string; contract: Observer['contract']; git?: CannedGit; events: GoldenEvent[]; expected: Row[] }
+export type Golden = { cc_version: string; files?: Record<string, string>; git?: Canned; events: GoldenEvent[]; expected: Row[] }
 
-/** The rows (timing rows left out) the observer logs for these events. */
-export async function replayEvents(g: Pick<Golden, 'cc_version' | 'contract' | 'events' | 'git'>, obs = new Observer({ ...loadDeps(), git: async (argv: string[]) => g.git?.[argv.join(' ')] ?? { exitCode: 128, stdout: '' } })): Promise<Row[]> {
-  obs.contract = g.contract
-  const tested = majorMinor(g.cc_version)
-  const rows: Row[] = []
-  let n = 0
-  for (const e of g.events) {
-    if (e.type === 'prompt') rows.push(...obs.prompt(e.text, '2026-01-01T00:00:00.000Z', `m${++n}`).rows)
-    else if (e.type === 'tool') rows.push(...obs.tool(e.tool, e.input, { isError: e.isError === true, output: e.output ?? '' }))
-    else if (e.type === 'turn') rows.push(...(await obs.turn(e.answer, { cwd: '/repo', ccVersion: g.cc_version, tested, rawTools: e.rawTools, compactions: e.compactions })))
-    else throw new Error(`unknown event type ${(e as { type: string }).type}`)
+type Hook = ($: unknown, e: unknown, next: (e: unknown) => Promise<unknown>) => Promise<unknown>
+
+let replays = 0
+
+/** Run the events through the mod; returns the log rows (timing rows left out) and any problems. */
+export async function replayEvents(g: Golden): Promise<{ rows: Row[]; problems: string[] }> {
+  const home = mkdtempSync(join(tmpdir(), 'overseer-replay-'))
+  const stateDir = join(home, 'state')
+  mkdirSync(stateDir, { recursive: true, mode: 0o700 })
+  writeFileSync(join(stateDir, 'tested-version'), `${majorMinor(g.cc_version)}\n`)
+  const maskJs = join(home, 'mask.cjs')
+  writeFileSync(maskJs, 'module.exports = { maskString: t => ({ text: t, hits: [] }) }')
+  const env: Record<string, string> = { HOME: home, OVERSEER_STATE_DIR: stateDir, OVERSEER_MASK_JS: maskJs, OVERSEER_CANARY_LOG: join(home, 'none.log') }
+  const sid = `golden-${process.pid}-${++replays}`
+  const files = g.files ?? {}
+  let now = Date.UTC(2026, 0, 1)
+  const problems: string[] = []
+
+  const canned = (argv: string[]) => {
+    const line = argv.join(' ')
+    const key = Object.keys(g.git ?? {}).filter(k => line.startsWith(k)).sort((a, b) => b.length - a.length)[0]
+    return key ? g.git![key]! : { exitCode: 128, stdout: '' }
   }
-  return rows.filter(r => r.signal !== 'timing')
+  const $ = {
+    env: { get: async (k: string) => env[k] },
+    clock: { now: async () => (now += 1_000), sleep: (ms: number) => new Promise(r => setTimeout(r, ms)) },
+    session: { id: async () => sid, cwd: async () => '/repo', version: async () => ({ version: g.cc_version, base: g.cc_version, builtAt: '' }) },
+    plugin: { root: PLUGIN },
+    fs: {
+      exists: async (p: string) => p in files || existsSync(p),
+      read: async (p: string, o?: { offset?: number; length?: number }) => {
+        const text = p in files ? files[p]! : readFileSync(p, 'utf8')
+        return o?.offset !== undefined ? text.slice(o.offset, o.offset + (o.length ?? text.length)) : text
+      },
+      stat: async (p: string) => ({ kind: 'file', size: p in files ? files[p]!.length : statSync(p).size, mtimeMs: 0, isLink: false }),
+    },
+    process: {
+      run: async (argv: string[], init: { stdin?: string } = {}) => {
+        if (argv[0] === 'node') {
+          const r = spawnSync('node', argv.slice(1), { input: init.stdin ?? '', encoding: 'utf8' })
+          return { exitCode: r.status ?? 1, stdout: r.stdout, stderr: r.stderr }
+        }
+        return { ...canned(argv), stderr: '' }
+      },
+    },
+  }
+
+  const hooks: Record<string, Hook> = {}
+  register(((event: string, a: unknown, b?: unknown) => { hooks[event] = (b ?? a) as Hook }) as never, { enabled: true } as never)
+
+  let i = 0
+  for (const ev of g.events) {
+    i++
+    if ('classic' in ev && !('hook' in ev)) {
+      handle(ev.classic, { session_id: sid, ...(ev.input ?? {}) }, env, (now += 1_000))
+      continue
+    }
+    const hook = hooks[ev.hook]
+    if (!hook) throw new Error(`event ${i}: the mod has no ${ev.hook} hook`)
+    // Core answer beneath the mod; it must see the event exactly as sent (0 actions).
+    const core = ev.hook === 'tool.call' ? ev.result : { ok: true }
+    let seen: unknown = undefined
+    const out = await hook($, ev.e, async x => { seen = x; return core })
+    if (!isDeepStrictEqual(seen, ev.e)) problems.push(`event ${i} (${ev.hook}): the mod changed the event it passed on`)
+    if (!isDeepStrictEqual(out, core)) problems.push(`event ${i} (${ev.hook}): the mod changed the result`)
+    if (ev.hook === 'tool.call' && ev.classic !== false) handle('tool', { session_id: sid }, env, (now += 1_000))
+  }
+
+  const log = join(stateDir, 'log', `${sid}.jsonl`)
+  const rows = existsSync(log)
+    ? readFileSync(log, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).map(r => ({ event: r.event, signal: r.signal, would: r.would, detail: r.detail }) as Row)
+    : []
+  rmSync(home, { recursive: true, force: true })
+  return { rows: rows.filter(r => r.signal !== 'timing'), problems }
 }
 
 const stable = (x: unknown) => JSON.stringify(x, (_k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort()) : v))
@@ -68,20 +143,20 @@ async function main(argv: string[]): Promise<number> {
     console.error(`replay: broken golden file ${file}: ${(err as Error).message}`)
     return 1
   }
-  let got: Row[]
+  let got: Awaited<ReturnType<typeof replayEvents>>
   try {
     got = await replayEvents(g)
   } catch (err) {
     console.error(`replay: ${(err as Error).message}`)
     return 1
   }
-  if (flags.print) console.log(JSON.stringify(got, null, 2))
-  const diff = diffRows(got, g.expected)
+  if (flags.print) console.log(JSON.stringify(got.rows, null, 2))
+  const diff = [...got.problems, ...diffRows(got.rows, g.expected)]
   if (diff.length) {
-    console.error(`replay: ${diff.length} row(s) differ\n${diff.join('\n')}`)
+    console.error(`replay: ${diff.length} problem(s)\n${diff.join('\n')}`)
     return 1
   }
-  console.log(`replay: ok (${got.length} rows)`)
+  console.log(`replay: ok (${got.rows.length} rows)`)
   if (flags.stamp) {
     const version = typeof flags['cc-version'] === 'string' ? flags['cc-version'] : execFileSync('claude', ['--version'], { encoding: 'utf8' })
     const mm = majorMinor(version)

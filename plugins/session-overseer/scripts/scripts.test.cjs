@@ -19,9 +19,12 @@ const lines = p => fs.readFileSync(p, 'utf8').trim().split('\n').map(l => JSON.p
 // ---- classic command hooks (scripts/classic.cjs) ----
 
 const { handle } = require('./classic.cjs')
+// What the mod writes at session.start / prompt.submit; the classic hooks count only after it.
+const arm = dir => fs.writeFileSync(path.join(dir, `${SID}.json`), JSON.stringify({ armed: true }))
 
 test('[EDGE-8] one compaction (SessionStart compact twice within 5 s, PostCompact not wired) -> count 1', () => {
   const dir = tmp()
+  arm(dir)
   const env = { OVERSEER_STATE_DIR: dir }
   assert.equal(handle('compact', { session_id: SID, source: 'compact' }, env, 1_000_000), 'compaction')
   assert.equal(handle('compact', { session_id: SID, source: 'compact' }, env, 1_003_000), 'dedupe')
@@ -39,6 +42,7 @@ test('[EDGE-8] one compaction (SessionStart compact twice within 5 s, PostCompac
 
 test('classic tool hook: one byte per main-loop call; bails on checker, OFF, subagent', () => {
   const dir = tmp()
+  arm(dir)
   const env = { OVERSEER_STATE_DIR: dir }
   handle('tool', { session_id: SID }, env)
   handle('tool', { session_id: SID }, env)
@@ -50,6 +54,18 @@ test('classic tool hook: one byte per main-loop call; bails on checker, OFF, sub
   fs.writeFileSync(path.join(dir, 'OFF'), '')
   assert.equal(handle('tool', { session_id: SID }, env), 'bail')
   assert.equal(handle('compact', { session_id: SID, source: 'compact' }, env), 'bail')
+})
+
+test('plugin option enabled:false (mod registers nothing, session never armed): classic hooks write nothing', () => {
+  const dir = tmp()
+  const env = { OVERSEER_STATE_DIR: dir }
+  assert.equal(handle('tool', { session_id: SID }, env), 'bail')
+  assert.equal(handle('compact', { session_id: SID, source: 'compact' }, env), 'bail')
+  assert.deepEqual(fs.readdirSync(dir), [])
+  // The mod's own wiring: session.start and prompt.submit write the armed flag.
+  const reg = fs.readFileSync(path.join(PLUGIN, 'hooks', 'register.ts'), 'utf8')
+  assert.match(reg, /if \(options\.enabled === false\) return/)
+  assert.match(reg, /event === 'session\.start' \|\| event === 'prompt\.submit'\) ops\.push\(ARMED\)/)
 })
 
 test('classic.cjs as a process: prints nothing, exits 0 even on garbage input', () => {
@@ -135,11 +151,24 @@ test('[RED-3] corrupted golden transcript -> exit 1 (broken JSON, or an expected
   assert.equal(node([path.join(__dirname, 'replay.ts'), changed]).status, 1)
 })
 
-test('golden covers loop, pin, stale, approval, claim block, claim_vs_git, blind', () => {
+test('golden covers loop, pin, stale, approval, claim block, claim_vs_git, compaction, blind', () => {
   const g = JSON.parse(fs.readFileSync(path.join(FIX, 'golden-transcript.json'), 'utf8'))
   const signals = new Set(g.expected.map(r => r.signal))
-  for (const s of ['loop', 'pin_violation', 'stale', 'approval', 'claim', 'claim_vs_git', 'blind']) assert.ok(signals.has(s), s)
+  for (const s of ['loop', 'pin_violation', 'stale', 'approval', 'claim', 'claim_vs_git', 'compaction', 'blind']) assert.ok(signals.has(s), s)
+  // Engine payload shapes, not observer calls: the replay goes through hooks/register.ts.
+  assert.ok(g.events.every(e => 'hook' in e || 'classic' in e))
   assert.ok(g.expected.some(r => r.signal === 'claim' && r.would === 'block'))
+})
+
+test('[FR-19] replay goes through the real handlers: a renamed engine field fails it', () => {
+  const g = JSON.parse(fs.readFileSync(path.join(FIX, 'golden-transcript.json'), 'utf8'))
+  // As if Claude Code renamed turn.complete's `answer` to `text`.
+  for (const e of g.events) if (e.hook === 'turn.complete') { e.e.text = e.e.answer; delete e.e.answer }
+  const renamed = path.join(tmp(), 'renamed.json')
+  fs.writeFileSync(renamed, JSON.stringify(g))
+  const r = node([path.join(__dirname, 'replay.ts'), renamed])
+  assert.equal(r.status, 1)
+  assert.match(r.stderr, /problem/)
 })
 
 test('replay --stamp writes major.minor to tested-version (0600)', () => {
@@ -203,7 +232,7 @@ test('replay-history: reader rows -> pointer-only rows per session; score-replay
   assert.deepEqual([summary.sessions, summary.replayed, summary.failed.length], [3, 2, 1])
   const [header, ...rows] = lines(path.join(out, `${SID}.jsonl`))
   assert.equal(header.replayable.claim_vs_git, false)
-  assert.deepEqual(rows.map(x => [x.signal, x.line]), [['approval', 1], ['loop', 6], ['pin_violation', 8], ['claim', 12]])
+  assert.deepEqual(rows.map(x => [x.signal, x.line]), [['approval', 1], ['loop', 6], ['pin_violation', 8], ['claim', 12], ['stale', 12]])
   // Pointers only: no transcript text in the output.
   assert.ok(!fs.readFileSync(path.join(out, `${SID}.jsonl`), 'utf8').includes('Fix the parser'))
 

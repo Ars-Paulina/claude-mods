@@ -1,145 +1,240 @@
 {
- "note": "Hand-written synthetic session. No real data. Covers approval, pinned rules, command loop, edit burst, done-claim block, claim after a fresh test run, stale, a rating token, claims vs canned git, and a blind turn.",
+ "note": "Hand-written synthetic session in engine payload shapes, run through hooks/register.ts, scripts/classic.cjs and scripts/store.cjs. No real data. Covers approval, hidden prompt, pinned rules, command loop, edit burst, done-claim block, stale (pin, evidence-less twice, compaction), claim after a fresh test run, claims vs canned git, and a blind turn.",
  "cc_version": "2.1.331",
- "contract": {
-  "ts": "2026-01-01T00:00:00.000Z",
-  "inGit": true,
-  "hasChecks": true
+ "files": {
+  "/repo/package.json": "{\"scripts\":{\"test\":\"vitest\"}}"
+ },
+ "git": {
+  "git rev-parse --show-toplevel": {
+   "exitCode": 0,
+   "stdout": "/repo\n"
+  },
+  "git status --porcelain -z": {
+   "exitCode": 0,
+   "stdout": " M src/util.ts\u0000 M src/date.ts\u0000"
+  },
+  "git -c core.quotePath=false log": {
+   "exitCode": 0,
+   "stdout": ""
+  },
+  "git cat-file -e abc1234": {
+   "exitCode": 128,
+   "stdout": ""
+  }
  },
  "events": [
   {
-   "type": "prompt",
-   "text": "Fix the date parser in src/date.ts and keep the tests green."
+   "hook": "session.start",
+   "e": {
+    "cwd": "/repo",
+    "surface": null,
+    "isInteractive": false
+   }
   },
   {
-   "type": "tool",
-   "tool": "Bash",
-   "input": {
+   "hook": "prompt.submit",
+   "e": {
+    "text": "Fix the date parser in src/date.ts and keep the tests green."
+   }
+  },
+  {
+   "hook": "prompt.submit",
+   "e": {
+    "text": "hidden notification",
+    "origin": {
+     "kind": "task-notification"
+    }
+   }
+  },
+  {
+   "hook": "tool.call",
+   "e": {
+    "tool": "Bash",
     "command": "npm install"
    },
-   "isError": false,
-   "output": "added 3 packages"
+   "result": {
+    "ref": 1,
+    "text": "added 3 packages"
+   }
   },
   {
-   "type": "tool",
-   "tool": "Read",
-   "input": {
+   "hook": "tool.call",
+   "e": {
+    "tool": "Read",
     "file_path": "/repo/.env"
    },
-   "isError": false,
-   "output": "(masked)"
+   "result": {
+    "ref": 1,
+    "text": "(masked)"
+   }
   },
   {
-   "type": "tool",
-   "tool": "Bash",
-   "input": {
+   "hook": "tool.call",
+   "e": {
+    "tool": "Bash",
     "command": "pnpm test"
    },
-   "isError": true,
-   "output": "Exit code 1\nFAIL date.test.ts"
+   "result": {
+    "isError": true,
+    "text": "Exit code 1\nFAIL date.test.ts"
+   }
   },
   {
-   "type": "tool",
-   "tool": "Bash",
-   "input": {
+   "hook": "tool.call",
+   "e": {
+    "tool": "Bash",
     "command": "pnpm test"
    },
-   "isError": true,
-   "output": "Exit code 1\nFAIL date.test.ts"
+   "result": {
+    "isError": true,
+    "text": "Exit code 1\nFAIL date.test.ts"
+   }
   },
   {
-   "type": "tool",
-   "tool": "Bash",
-   "input": {
+   "hook": "tool.call",
+   "e": {
+    "tool": "Bash",
     "command": "pnpm test"
    },
-   "isError": true,
-   "output": "Exit code 1\nFAIL date.test.ts"
+   "result": {
+    "isError": true,
+    "text": "Exit code 1\nFAIL date.test.ts"
+   }
   },
   {
-   "type": "turn",
-   "answer": "The test still fails; looking at the parser next.",
-   "rawTools": 5
+   "hook": "turn.complete",
+   "e": {
+    "answer": "The test still fails; looking at the parser next.",
+    "durationMs": 1,
+    "isAborted": false,
+    "turnId": "t",
+    "reason": "answer"
+   }
   },
   {
-   "type": "tool",
-   "tool": "Edit",
-   "input": {
+   "hook": "tool.call",
+   "e": {
+    "tool": "Edit",
     "file_path": "/repo/src/date.ts",
     "old_string": "a",
     "new_string": "b"
    },
-   "isError": false,
-   "output": "ok"
+   "result": {
+    "ref": 1,
+    "text": "ok"
+   }
   },
   {
-   "type": "tool",
-   "tool": "Edit",
-   "input": {
+   "hook": "tool.call",
+   "e": {
+    "tool": "Edit",
     "file_path": "/repo/src/date.ts",
     "old_string": "b",
     "new_string": "a"
    },
-   "isError": false,
-   "output": "ok"
+   "result": {
+    "ref": 1,
+    "text": "ok"
+   }
   },
   {
-   "type": "turn",
-   "answer": "All tests pass, fixed and shipped.",
-   "rawTools": 2
-  },
-  {
-   "type": "prompt",
-   "text": "r1 y"
-  },
-  {
-   "type": "turn",
-   "answer": "Done, it works now.",
-   "compactions": 1
-  },
-  {
-   "type": "tool",
-   "tool": "Bash",
-   "input": {
-    "command": "pnpm test"
+   "hook": "tool.call",
+   "e": {
+    "tool": "Bash",
+    "command": "cat vitest.config.ts"
    },
-   "isError": false,
-   "output": "12 passed"
+   "result": {
+    "ref": 1,
+    "text": "export default {}"
+   }
   },
   {
-   "type": "turn",
-   "answer": "Tests pass now, done.",
-   "rawTools": 1
+   "hook": "turn.complete",
+   "e": {
+    "answer": "All tests pass, fixed and shipped.",
+    "durationMs": 1,
+    "isAborted": false,
+    "turnId": "t",
+    "reason": "answer"
+   }
   },
   {
-   "type": "tool",
-   "tool": "Edit",
+   "hook": "prompt.submit",
+   "e": {
+    "text": "r1 y"
+   }
+  },
+  {
+   "hook": "turn.complete",
+   "e": {
+    "answer": "Done, it works now.",
+    "durationMs": 1,
+    "isAborted": false,
+    "turnId": "t",
+    "reason": "answer"
+   }
+  },
+  {
+   "classic": "compact",
    "input": {
+    "source": "compact"
+   }
+  },
+  {
+   "classic": "compact",
+   "input": {
+    "source": "compact"
+   }
+  },
+  {
+   "hook": "tool.call",
+   "e": {
+    "tool": "Edit",
     "file_path": "/repo/src/util.ts",
     "old_string": "x",
     "new_string": "y"
    },
-   "isError": false,
-   "output": "ok"
+   "result": {
+    "ref": 1,
+    "text": "ok"
+   }
   },
   {
-   "type": "tool",
-   "tool": "Bash",
-   "input": {
+   "hook": "tool.call",
+   "e": {
+    "tool": "Bash",
     "command": "pnpm test"
    },
-   "isError": false,
-   "output": "12 passed"
+   "result": {
+    "ref": 1,
+    "text": "12 passed"
+   }
   },
   {
-   "type": "turn",
-   "answer": "Fixed src/util.ts and committed abc1234, tests pass.",
-   "rawTools": 2
+   "hook": "turn.complete",
+   "e": {
+    "answer": "Fixed src/util.ts and committed abc1234, tests pass.",
+    "durationMs": 1,
+    "isAborted": false,
+    "turnId": "t",
+    "reason": "answer"
+   }
   },
   {
-   "type": "turn",
-   "answer": "Here is a summary of the changes.",
-   "rawTools": 4
+   "classic": "tool"
+  },
+  {
+   "classic": "tool"
+  },
+  {
+   "hook": "turn.complete",
+   "e": {
+    "answer": "Here is a summary of the changes.",
+    "durationMs": 1,
+    "isAborted": false,
+    "turnId": "t",
+    "reason": "answer"
+   }
   }
  ],
  "expected": [
@@ -148,7 +243,7 @@
    "signal": "approval",
    "would": "none",
    "detail": {
-    "message_id": "m1"
+    "message_id": "1767225602000-1"
    }
   },
   {
@@ -182,6 +277,20 @@
    }
   },
   {
+   "event": "turn.complete",
+   "signal": "stale",
+   "would": "warn",
+   "detail": {
+    "triggers": [
+     "pin_violation"
+    ],
+    "compactions": 0,
+    "evidenceless": 0,
+    "pins": 2,
+    "canary_misses": 0
+   }
+  },
+  {
    "event": "tool.call",
    "signal": "loop",
    "would": "warn",
@@ -204,7 +313,10 @@
     ],
     "files": 0,
     "shas": 0,
-    "canary": null,
+    "canary": {
+     "alerts": 0,
+     "misses": 0
+    },
     "missing": [
      "test run"
     ]
@@ -222,7 +334,10 @@
     ],
     "files": 0,
     "shas": 0,
-    "canary": null,
+    "canary": {
+     "alerts": 0,
+     "misses": 0
+    },
     "missing": [
      "test run"
     ]
@@ -231,25 +346,23 @@
   {
    "event": "turn.complete",
    "signal": "stale",
-   "would": "handoff",
+   "would": "warn",
    "detail": {
+    "triggers": [
+     "evidenceless_claims"
+    ],
+    "compactions": 0,
     "evidenceless": 2,
-    "compactions": 1
+    "pins": 0,
+    "canary_misses": 0
    }
   },
   {
-   "event": "turn.complete",
-   "signal": "claim",
-   "would": "none",
+   "event": "classic.SessionStart",
+   "signal": "compaction",
+   "would": "warn",
    "detail": {
-    "task_type": "code",
-    "phrases": [
-     "tests pass",
-     "done"
-    ],
-    "files": 0,
-    "shas": 0,
-    "canary": null
+    "count": 1
    }
   },
   {
@@ -275,7 +388,24 @@
     ],
     "files": 1,
     "shas": 1,
-    "canary": null
+    "canary": {
+     "alerts": 0,
+     "misses": 0
+    }
+   }
+  },
+  {
+   "event": "turn.complete",
+   "signal": "stale",
+   "would": "warn",
+   "detail": {
+    "triggers": [
+     "compaction"
+    ],
+    "compactions": 1,
+    "evidenceless": 3,
+    "pins": 0,
+    "canary_misses": 0
    }
   },
   {
@@ -284,23 +414,9 @@
    "would": "none",
    "detail": {
     "reason": "no_events",
-    "raw_tools": 4,
+    "raw_tools": 2,
     "parsed_tools": 0
    }
   }
- ],
- "git": {
-  "git status --porcelain --untracked-files=all": {
-   "exitCode": 0,
-   "stdout": " M src/util.ts\n M src/date.ts\n"
-  },
-  "git log --since=2026-01-01T00:00:00.000Z --name-only --format=": {
-   "exitCode": 0,
-   "stdout": ""
-  },
-  "git cat-file -e abc1234^{commit}": {
-   "exitCode": 128,
-   "stdout": ""
-  }
- }
+ ]
 }
