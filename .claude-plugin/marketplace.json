@@ -54,6 +54,12 @@
       "version": "0.2.0"
     },
     {
+      "name": "session-overseer",
+      "source": "./plugins/session-overseer",
+      "description": "Log-only collector: watches done-claims, claims vs git, loops, compactions, pinned-rule breaks and approvals, and logs what it would have done. Takes no action.",
+      "version": "0.1.0"
+    },
+    {
       "name": "statusline",
       "source": "./plugins/statusline",
       "description": "Status rows above the prompt (context fill, 5h and 7d limits, model, session, branch, turns, transcript, graft, project colour) plus the session files other tools read. Replaces a statusLine command.",

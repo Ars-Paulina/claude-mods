@@ -12,6 +12,7 @@ Small mods for [Claude Code](https://code.claude.com): extra panes, lines above 
 | [haiku-search](plugins/haiku-search) | Hands multi-step search to an Explore subagent on Haiku and pins subagent models |
 | [npm-block](plugins/npm-block) | Rewrites `npm` to `pnpm` in Bash commands instead of blocking them |
 | [secret-mask](plugins/secret-mask) | Masks secrets in tool results, hook context and attachments before the model or transcript sees them |
+| [session-overseer](plugins/session-overseer) | Log only: notes done-claims without a test run, claims git does not back, loops, compactions and pinned-rule breaks, and what it would have done. Takes no action |
 
 ## Install
 
