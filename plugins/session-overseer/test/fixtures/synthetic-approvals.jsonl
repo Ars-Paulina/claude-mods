@@ -1,0 +1,10 @@
+{"id": "a001", "text": "yes, push branch feature-x", "prev_question": null, "expected": "approval", "scope": "push branch feature-x", "kind": "explicit"}
+{"id": "a002", "text": "go ahead and merge pull request 12", "prev_question": null, "expected": "approval", "scope": "merge pull request 12", "kind": "explicit"}
+{"id": "a003", "text": "yes", "prev_question": "Push the work branch now?", "expected": "approval", "scope": "Push the work branch now?", "kind": "bare"}
+{"id": "a004", "text": "ok", "prev_question": "Delete the temp folder?", "expected": "approval", "scope": "Delete the temp folder?", "kind": "bare"}
+{"id": "a005", "text": "sure, sounds fine", "prev_question": null, "expected": "not", "scope": null, "kind": "ambiguous"}
+{"id": "a006", "text": "maybe later", "prev_question": "Deploy now?", "expected": "not", "scope": null, "kind": "ambiguous"}
+{"id": "a007", "text": "yes but not the migration", "prev_question": "Run the deploy and the migration?", "expected": "not", "scope": null, "kind": "ambiguous"}
+{"id": "a008", "text": "use {{TOKEN}} to push the branch", "prev_question": null, "expected": "not", "scope": null, "kind": "masked"}
+{"id": "a009", "text": "yes, rotate the key {{TOKEN}} today", "prev_question": null, "expected": "approval", "scope": "rotate the key", "kind": "masked"}
+{"id": "a010", "text": "r12 y", "prev_question": null, "expected": "not", "scope": null, "kind": "bare"}

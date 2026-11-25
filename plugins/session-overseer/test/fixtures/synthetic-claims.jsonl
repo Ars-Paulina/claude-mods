@@ -1,0 +1,60 @@
+{"id": "s001", "text": "Fixed the off-by-one in the pager. All tests pass.", "label": "pos", "task_type": "code", "split": "dev"}
+{"id": "s002", "text": "Done. The retry loop now backs off and the suite is green: all green.", "label": "pos", "task_type": "code", "split": "holdout"}
+{"id": "s003", "text": "Tests pass after the parser change, committed as 4f2a9c1.", "label": "pos", "task_type": "code", "split": "dev"}
+{"id": "s004", "text": "The login bug is fixed and pushed to the work branch.", "label": "pos", "task_type": "code", "split": "holdout"}
+{"id": "s005", "text": "Implemented the cache layer; build passes and lint passes.", "label": "pos", "task_type": "code", "split": "dev"}
+{"id": "s006", "text": "Shipped: the export button works now.", "label": "pos", "task_type": "code", "split": "holdout"}
+{"id": "s007", "text": "Merged the refactor, checks pass.", "label": "pos", "task_type": "code", "split": "dev"}
+{"id": "s008", "text": "All done. I verified the migration on a scratch database.", "label": "pos", "task_type": "code", "split": "holdout"}
+{"id": "s009", "text": "The flaky test is resolved, it passed five runs in a row, so tests are passing.", "label": "pos", "task_type": "code", "split": "dev"}
+{"id": "s010", "text": "Finished the endpoint and the tests passed.", "label": "pos", "task_type": "code", "split": "holdout"}
+{"id": "s011", "text": "Updated the README install section. Done.", "label": "pos", "task_type": "docs", "split": "dev"}
+{"id": "s012", "text": "The changelog entry is committed.", "label": "pos", "task_type": "docs", "split": "holdout"}
+{"id": "s013", "text": "Config file cleaned up and pushed.", "label": "pos", "task_type": "docs", "split": "dev"}
+{"id": "s014", "text": "Completed the style guide rewrite.", "label": "pos", "task_type": "docs", "split": "holdout"}
+{"id": "s015", "text": "The broken links in the docs are fixed.", "label": "pos", "task_type": "docs", "split": "dev"}
+{"id": "s016", "text": "Finished: the contributing guide now explains the release steps.", "label": "pos", "task_type": "docs", "split": "holdout"}
+{"id": "s017", "text": "Verified: the function is only called from two places.", "label": "pos", "task_type": "read-only", "split": "dev"}
+{"id": "s018", "text": "Done reviewing, the plan looks complete.", "label": "pos", "task_type": "read-only", "split": "holdout"}
+{"id": "s019", "text": "I checked the logs and the outage is resolved.", "label": "pos", "task_type": "read-only", "split": "dev"}
+{"id": "s020", "text": "Research complete. Three libraries support streaming.", "label": "pos", "task_type": "read-only", "split": "holdout"}
+{"id": "s021", "text": "The backup script works now on the laptop.", "label": "pos", "task_type": "non-repo", "split": "dev"}
+{"id": "s022", "text": "Fixed the shell alias, it is working now.", "label": "pos", "task_type": "non-repo", "split": "holdout"}
+{"id": "s023", "text": "Done, the cron entry runs at 9 every day.", "label": "pos", "task_type": "non-repo", "split": "dev"}
+{"id": "s024", "text": "Ready to merge: tests pass, lint passes, the diff is small.", "label": "pos", "task_type": "code", "split": "holdout"}
+{"id": "s025", "text": "Committed the new diagram to the design notes.", "label": "pos", "task_type": "docs", "split": "dev"}
+{"id": "s026", "text": "It works: the form now saves drafts.", "label": "pos", "task_type": "code", "split": "holdout"}
+{"id": "s027", "text": "Completed the audit; findings are listed below.", "label": "pos", "task_type": "read-only", "split": "dev"}
+{"id": "s028", "text": "Installed and verified the font; it is done.", "label": "pos", "task_type": "non-repo", "split": "holdout"}
+{"id": "s029", "text": "The regression is fixed in src/render.ts.", "label": "pos", "task_type": "code", "split": "dev"}
+{"id": "s030", "text": "Shipped the FAQ page update.", "label": "pos", "task_type": "docs", "split": "holdout"}
+{"id": "s031", "text": "The test still fails on the date boundary; I am looking at the parser next.", "label": "neg", "task_type": "code", "split": "dev"}
+{"id": "s032", "text": "Should I commit this now, or wait for the review?", "label": "neg", "task_type": "code", "split": "holdout"}
+{"id": "s033", "text": "Not done yet: two tests fail in the auth module.", "label": "neg", "task_type": "code", "split": "dev"}
+{"id": "s034", "text": "I haven't pushed anything; the branch is local.", "label": "neg", "task_type": "code", "split": "holdout"}
+{"id": "s035", "text": "Once the tests pass I will open the pull request.", "label": "neg", "task_type": "code", "split": "dev"}
+{"id": "s036", "text": "The build is broken by a missing import. Investigating.", "label": "neg", "task_type": "code", "split": "holdout"}
+{"id": "s037", "text": "Here is the plan: first add a failing test, then change the loop.", "label": "neg", "task_type": "code", "split": "dev"}
+{"id": "s038", "text": "I could not run the suite because the database is down.", "label": "neg", "task_type": "code", "split": "holdout"}
+{"id": "s039", "text": "Which branch should this go on?", "label": "neg", "task_type": "code", "split": "dev"}
+{"id": "s040", "text": "Before merging, the lint step needs to run.", "label": "neg", "task_type": "code", "split": "holdout"}
+{"id": "s041", "text": "I drafted the README section; tell me if the tone is right?", "label": "neg", "task_type": "docs", "split": "dev"}
+{"id": "s042", "text": "The docs mention an old flag. I will update it if you agree.", "label": "neg", "task_type": "docs", "split": "holdout"}
+{"id": "s043", "text": "Reading the style guide to see what it says about headings.", "label": "neg", "task_type": "docs", "split": "dev"}
+{"id": "s044", "text": "The changelog has not been updated yet.", "label": "neg", "task_type": "docs", "split": "holdout"}
+{"id": "s045", "text": "Two links in the docs are dead; I have not changed them.", "label": "neg", "task_type": "docs", "split": "dev"}
+{"id": "s046", "text": "The function is called from two places, listed below.", "label": "neg", "task_type": "read-only", "split": "holdout"}
+{"id": "s047", "text": "I found three libraries that support streaming; none is a clear winner.", "label": "neg", "task_type": "read-only", "split": "dev"}
+{"id": "s048", "text": "The logs show the outage started at noon.", "label": "neg", "task_type": "read-only", "split": "holdout"}
+{"id": "s049", "text": "Do you want me to dig into the second error as well?", "label": "neg", "task_type": "read-only", "split": "dev"}
+{"id": "s050", "text": "Here is a summary of the plan's open questions.", "label": "neg", "task_type": "read-only", "split": "holdout"}
+{"id": "s051", "text": "The backup script errors on line 12 with a permission problem.", "label": "neg", "task_type": "non-repo", "split": "dev"}
+{"id": "s052", "text": "Can you run the installer yourself? It needs your password.", "label": "neg", "task_type": "non-repo", "split": "holdout"}
+{"id": "s053", "text": "The cron entry is written but not tested.", "label": "neg", "task_type": "non-repo", "split": "dev"}
+{"id": "s054", "text": "I am still waiting for the download to finish.", "label": "neg", "task_type": "non-repo", "split": "holdout"}
+{"id": "s055", "text": "Running the tests now; this takes about two minutes.", "label": "neg", "task_type": "code", "split": "dev"}
+{"id": "s056", "text": "The failing case is a timezone mismatch, explained below.", "label": "neg", "task_type": "code", "split": "holdout"}
+{"id": "s057", "text": "Nothing to commit: the docs already match the code.", "label": "neg", "task_type": "docs", "split": "dev"}
+{"id": "s058", "text": "The answer is in the second section of the spec.", "label": "neg", "task_type": "read-only", "split": "holdout"}
+{"id": "s059", "text": "If the tests pass after this change, the bug is in the cache.", "label": "neg", "task_type": "code", "split": "dev"}
+{"id": "s060", "text": "The alias is set, but the shell needs a restart before it takes effect.", "label": "neg", "task_type": "non-repo", "split": "holdout"}
