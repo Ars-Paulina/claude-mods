@@ -135,10 +135,10 @@ test('[RED-3] corrupted golden transcript -> exit 1 (broken JSON, or an expected
   assert.equal(node([path.join(__dirname, 'replay.ts'), changed]).status, 1)
 })
 
-test('golden covers loop, pin, stale, approval, claim block', () => {
+test('golden covers loop, pin, stale, approval, claim block, claim_vs_git, blind', () => {
   const g = JSON.parse(fs.readFileSync(path.join(FIX, 'golden-transcript.json'), 'utf8'))
   const signals = new Set(g.expected.map(r => r.signal))
-  for (const s of ['loop', 'pin_violation', 'stale', 'approval', 'claim']) assert.ok(signals.has(s), s)
+  for (const s of ['loop', 'pin_violation', 'stale', 'approval', 'claim', 'claim_vs_git', 'blind']) assert.ok(signals.has(s), s)
   assert.ok(g.expected.some(r => r.signal === 'claim' && r.would === 'block'))
 })
 

@@ -26,10 +26,13 @@ export type GoldenEvent =
   | { type: 'tool'; tool: string; input: Record<string, unknown>; isError?: boolean; output?: string }
   | { type: 'turn'; answer: string; rawTools?: number; compactions?: number }
 
-export type Golden = { cc_version: string; contract: Observer['contract']; events: GoldenEvent[]; expected: Row[] }
+/** Canned git answers keyed by the argv joined with spaces; anything else exits 128 (unknown). */
+export type CannedGit = Record<string, { exitCode: number; stdout: string }>
+
+export type Golden = { cc_version: string; contract: Observer['contract']; git?: CannedGit; events: GoldenEvent[]; expected: Row[] }
 
 /** The rows (timing rows left out) the observer logs for these events. */
-export async function replayEvents(g: Pick<Golden, 'cc_version' | 'contract' | 'events'>, obs = new Observer(loadDeps())): Promise<Row[]> {
+export async function replayEvents(g: Pick<Golden, 'cc_version' | 'contract' | 'events' | 'git'>, obs = new Observer({ ...loadDeps(), git: async (argv: string[]) => g.git?.[argv.join(' ')] ?? { exitCode: 128, stdout: '' } })): Promise<Row[]> {
   obs.contract = g.contract
   const tested = majorMinor(g.cc_version)
   const rows: Row[] = []

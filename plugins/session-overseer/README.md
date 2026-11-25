@@ -18,7 +18,7 @@ denials, no prompts, no UI.
 | `blind` | the mod cannot see enough: tool calls the mod did not parse, no tested-version stamp, a new Claude Code version, or an internal error | `none` |
 | `timing` | every handled event: `ms` spent | `none` |
 
-Each row: `{ts, sid, event, signal, would, detail, ms}`. `detail` holds counts, hashes and
+Each row: `{ts, sid, event, signal, would, detail, ms}`. `ms` is measured from the start of the handler to the write, with the store call (a short `node` process) awaited and included. `detail` holds counts, hashes and
 pointers, never transcript text.
 
 ## Files
