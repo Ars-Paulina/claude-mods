@@ -13,7 +13,7 @@ import { args, clopperPearson, lineText, loadDeps, readJsonl, round, sha256 } fr
 
 const MIN_TYPE_ROWS = 5
 
-type Row = { id: string; label: 'pos' | 'neg'; task_type?: string; split?: string; text?: string; session_id?: string; line?: number; sha?: string }
+type Row = { id: string; label: 'pos' | 'neg'; task_type?: string; split?: string; text?: string; session_id?: string; line?: number; sha?: string; holdout_source?: string }
 
 function acc(rows: { ok: boolean }[]) {
   const k = rows.filter(r => r.ok).length
@@ -25,7 +25,11 @@ export function score(rows: Row[], phrasesPath?: string) {
   const scored: { id: string; label: string; type: string; got: string; ok: boolean }[] = []
   const shaMismatch: string[] = []
   const unresolved: string[] = []
+  const disputed: string[] = []
   for (const r of rows) {
+    // Holdout answer key = majority of the blind labellers (M0 merge_holdout.py --agents, written into
+    // `label`); a row with no majority carries holdout_source "disputed" and is left out of scoring.
+    if (r.holdout_source === 'disputed') { disputed.push(r.id); continue }
     let text = r.text
     if (text === undefined) {
       const t = r.session_id && r.line ? lineText(r.session_id, r.line) : null
@@ -55,6 +59,7 @@ export function score(rows: Row[], phrasesPath?: string) {
     wrong: scored.filter(s => !s.ok).map(s => s.id),
     sha_mismatch: shaMismatch,
     unresolved,
+    disputed,
   }
 }
 

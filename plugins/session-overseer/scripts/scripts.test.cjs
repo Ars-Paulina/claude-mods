@@ -122,11 +122,14 @@ test('score-fixture: pointer rows resolved through the reader; a wrong sha is re
     { id: 'c1', session_id: SID, line: 10, sha: sha('All tests pass, shipped.'), label: 'pos', task_type: 'code', split: 'holdout' },
     { id: 'c2', session_id: SID, line: 11, sha: sha('Should I push?'), label: 'neg', task_type: 'code', split: 'holdout' },
     { id: 'c3', session_id: SID, line: 11, sha: sha('something else'), label: 'neg', task_type: 'code', split: 'holdout' },
+    // No labeller majority: left out, listed, never scored (its label would be wrong here).
+    { id: 'c4', session_id: SID, line: 10, sha: sha('All tests pass, shipped.'), label: 'neg', task_type: 'code', split: 'holdout', holdout_source: 'disputed' },
+    { id: 'c5', session_id: SID, line: 10, sha: sha('All tests pass, shipped.'), label: 'pos', task_type: 'code', split: 'holdout', holdout_source: 'agent-consensus' },
   ].map(r => JSON.stringify(r)).join('\n'))
   const r = node([path.join(__dirname, 'score-fixture.ts'), fixture], { FSEARCH_BIN: path.join(FIX, 'fake-fsearch.cjs'), FAKE_FSEARCH_DATA: data })
   assert.equal(r.status, 0, r.stderr)
   const out = JSON.parse(r.stdout)
-  assert.deepEqual([out.overall.n, out.overall.correct, out.sha_mismatch], [2, 2, ['c3']])
+  assert.deepEqual([out.overall.n, out.overall.correct, out.sha_mismatch, out.disputed], [3, 3, ['c3'], ['c4']])
   assert.equal(out.per_task_type.code.result, 'insufficient data')
 })
 
