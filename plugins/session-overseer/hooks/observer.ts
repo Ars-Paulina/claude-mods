@@ -4,7 +4,7 @@
 
 import { detectClaim } from './claims.ts'
 import type { Detector } from './claims.ts'
-import { isCheckCommand, isFresh, taskType } from './contract.ts'
+import { claimsCheckResult, isCheckCommand, isFresh, taskType } from './contract.ts'
 import type { Contract, Edit, Run, TaskType } from './contract.ts'
 import { gitCheck } from './gitcheck.ts'
 import type { Runner, Sleep } from './gitcheck.ts'
@@ -130,7 +130,12 @@ export class Observer {
           evidenceless = true
         }
       } else if (type === 'read-only') {
-        if (!this.turnRuns.length && rawTools === 0) { would = 'warn'; detail.missing = ['cited source'] }
+        // No edits, but the reply asserts a check result in a repo that has checks: same evidence as code.
+        if (this.contract?.hasChecks && claimsCheckResult(claim.phrases) && !isFresh(this.runs, [], [])) {
+          would = 'block'
+          detail.missing = ['test run']
+          evidenceless = true
+        } else if (!this.turnRuns.length && rawTools === 0) { would = 'warn'; detail.missing = ['cited source'] }
       }
       if ((type === 'code' || type === 'docs') && (claim.files.length || claim.shas.length) && this.contract) {
         const authored = this.edits.map(e => e.file)
