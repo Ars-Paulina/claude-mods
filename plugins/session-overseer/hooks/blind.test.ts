@@ -15,3 +15,8 @@ test('[EDGE-9] 2.1.331 -> 2.1.332 stays green; 2.1 -> 2.2 grey; nothing stamped 
   expect(blindReason({ ...base, tested: null })).toBe('unstamped')
   expect(blindReason({ ...base, tested: 'garbage' })).toBe('unstamped')
 })
+
+test('raw_missing: tool calls parsed but the classic count file is absent -> grey, never silently green', () => {
+  expect(blindReason({ ...base, toolTurn: true, parsedEvents: 2, rawMissing: true })).toBe('raw_missing')
+  expect(blindReason({ ...base, toolTurn: false, parsedEvents: 0, rawMissing: true })).toBe(null)
+})

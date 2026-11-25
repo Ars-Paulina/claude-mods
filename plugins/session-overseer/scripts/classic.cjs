@@ -6,7 +6,9 @@
 //   classic.cjs tool     <- PostToolUse: append one byte to raw/<sid>.count, the second count of
 //                           main-loop tool calls that blind detection (FR-19) compares against.
 // Prints nothing and always exits 0: a classic hook's output would reach the session.
-// Same bails as the mod: OVERSEER_CHECKER=1, the OFF file, subagent input (agent_id).
+// Same bails as the mod: OVERSEER_CHECKER=1, the OFF file, subagent input (agent_id). And a session
+// the mod never armed (state `armed`, written at its session.start / prompt.submit): with the
+// plugin option `enabled: false` the mod registers nothing, so these hooks write nothing either.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -26,6 +28,9 @@ function handle(kind, input, env = process.env, now = Date.now()) {
   if (input.agent_id) return 'bail'
   const sid = input.session_id
   if (typeof sid !== 'string' || !/^[\w-]{1,128}$/.test(sid)) return 'bail'
+  let state = {}
+  try { state = JSON.parse(fs.readFileSync(path.join(dir, `${sid}.json`), 'utf8')) } catch { /* none yet */ }
+  if (state.armed !== true) return 'bail'
 
   if (kind === 'tool') {
     const raw = path.join(dir, 'raw')
@@ -37,8 +42,6 @@ function handle(kind, input, env = process.env, now = Date.now()) {
   if (kind === 'compact') {
     if (input.source !== undefined && input.source !== 'compact') return 'bail'
     if (env.OVERSEER_COMPACTION === '0') return 'bail'
-    let state = {}
-    try { state = JSON.parse(fs.readFileSync(path.join(dir, `${sid}.json`), 'utf8')) } catch { /* none yet */ }
     if (typeof state.last_compact_ms === 'number' && Math.abs(now - state.last_compact_ms) < DEDUPE_MS) return 'dedupe'
     const count = (Number(state.compactions) || 0) + 1
     run({

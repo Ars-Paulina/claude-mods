@@ -21,10 +21,14 @@ import type { Op, Paths } from './log.ts'
 // needs (SessionStart compact, PostToolUse count) come from command hooks in hooks.json instead.
 
 const CANARY_TAIL = 65_536
+// Bounds what a hung child can cost the person on the events awaited before next(e): this git call
+// plus the store bridge (log.ts STORE_TIMEOUT_MS) stay under one second together.
+const CONTRACT_GIT_TIMEOUT_MS = 300
 
-// ponytail: per-session state lives in module memory; a mod reload starts the session's counts over.
+// ponytail: per-session observers live in module memory; a mod reload starts runs/edits over. The
+// inputs that would give false signals after a reload (raw count, compactions, canary misses seen)
+// are kept in the state file as `seen` and read back when the observer is made.
 const sessions = new Map<string, Observer>()
-const rawSeen = new Map<string, number>()
 let deps: Promise<Deps> | null = null
 
 function loadDeps($: Engine): Promise<Deps> {
@@ -45,11 +49,21 @@ function loadDeps($: Engine): Promise<Deps> {
   return deps
 }
 
-async function observer($: Engine, sid: string): Promise<Observer> {
+async function observer($: Engine, p: Paths, sid: string): Promise<Observer> {
   let o = sessions.get(sid)
-  if (!o) sessions.set(sid, (o = new Observer(await loadDeps($))))
+  if (!o) {
+    o = new Observer(await loadDeps($))
+    const state = await readText($, `${p.stateDir}/${sid}.json`)
+    const seen = state ? (JSON.parse(state).seen as Partial<Observer['seen']> | undefined) : undefined
+    if (seen) for (const k of ['raw', 'compactions', 'canary_misses'] as const) if (typeof seen[k] === 'number') o.seen[k] = seen[k]
+    sessions.set(sid, o)
+  }
   return o
 }
+
+// Written by the mod when it starts or sees a prompt: the classic command hooks (scripts/classic.cjs)
+// only count for a session the mod armed, so `enabled: false` (nothing registered) stops them too.
+const ARMED: Op = { op: 'state', patch: { armed: true } }
 
 type Ctx = { p: Paths; sid: string; obs: Observer; now: number }
 
@@ -72,7 +86,7 @@ export async function observe($: Engine, event: string, agentId: unknown, fn: (c
     let ops: Op[]
     try {
       if ((await $.env.get('OVERSEER_FAILTEST')) === '1') throw new Error('failtest')
-      ops = await fn({ p, sid, obs: await observer($, sid), now })
+      ops = await fn({ p, sid, obs: await observer($, p, sid), now })
     } catch (err) {
       const reason = String((err as Error)?.message) === 'failtest' ? 'failtest' : 'error'
       ops = [
@@ -80,6 +94,7 @@ export async function observe($: Engine, event: string, agentId: unknown, fn: (c
         { op: 'log', row: { event, signal: 'blind', would: 'none', detail: { reason } } },
       ]
     }
+    if (event === 'session.start' || event === 'prompt.submit') ops.push(ARMED)
     await store($, p, sid, now, ops)
   } catch {
     // Fail open: the session goes on as if the mod were not there.
@@ -93,7 +108,7 @@ async function readText($: Engine, path: string): Promise<string | null> {
 async function freezeContract($: Engine, obs: Observer, now: number): Promise<void> {
   if (obs.contract) return
   const cwd = await $.session.cwd()
-  const top = await $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd, timeoutMs: 1_000 })
+  const top = await $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd, timeoutMs: CONTRACT_GIT_TIMEOUT_MS })
   const root = top.exitCode === 0 ? top.stdout.trim() : ''
   const ts = new Date(now).toISOString()
   if (!root) { obs.contract = { ts, inGit: false, hasChecks: false }; return }
@@ -157,14 +172,14 @@ export const register: Register = (on, options) => {
       // and the deduped compaction count in the state file.
       const rawPath = `${p.stateDir}/raw/${sid}.count`
       const raw = (await $.fs.exists(rawPath)) ? (await $.fs.stat(rawPath)).size : null
-      const rawTools = raw === null ? undefined : raw - (rawSeen.get(sid) ?? 0)
-      if (raw !== null) rawSeen.set(sid, raw)
+      const rawTools = raw === null ? null : Math.max(0, raw - obs.seen.raw)
+      if (raw !== null) obs.seen.raw = raw
       const state = await readText($, `${p.stateDir}/${sid}.json`)
       const compactions = state ? Number(JSON.parse(state).compactions ?? 0) : undefined
       const rows = await obs.turn(e.answer, { cwd: await $.session.cwd(), ccVersion: cc, tested, canary, rawTools, compactions })
       return [
         ...rowsOp(rows),
-        { op: 'state', patch: { dot: obs.dot(), blind_reason: obs.blind, cc_version: cc, counts: obs.counts, suspect: [] } },
+        { op: 'state', patch: { dot: obs.dot(), blind_reason: obs.blind, cc_version: cc, counts: obs.counts, suspect: [], seen: { ...obs.seen } } },
       ]
     })
     return next(e)

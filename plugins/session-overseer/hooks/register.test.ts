@@ -9,7 +9,7 @@ const PINS = JSON.stringify({ rules: [{ id: 'pnpm-only', text: 'pnpm only', comm
 
 type Payload = { stateDir: string; sid: string; ops: { op: string; row?: any; patch?: any; rec?: any }[] }
 
-function world(on: On, env: Record<string, string> = {}, files: Record<string, string> = {}, opts: { versionThrows?: boolean } = {}) {
+function world(on: On, env: Record<string, string> = {}, files: Record<string, string> = {}, opts: { versionThrows?: boolean; sid?: string } = {}) {
   const stores: Payload[] = []
   const core: { event: string; e: unknown }[] = []
   const all: Record<string, string> = {
@@ -18,7 +18,7 @@ function world(on: On, env: Record<string, string> = {}, files: Record<string, s
   }
   mock.env(on, { HOME: '/h', ...env })
   mock.clock(on, { now: Date.UTC(2026, 10, 24) })
-  on('session.id', () => ({ value: 'sess-1' }) as never)
+  on('session.id', () => ({ value: opts.sid ?? 'sess-1' }) as never)
   on('session.cwd', () => ({ value: '/repo' }) as never)
   on('session.version', () => {
     if (opts.versionThrows) throw new Error('boom')
@@ -108,7 +108,8 @@ test('[EDGE-7] OVERSEER_FAILTEST=1: observe throws, event unchanged, dot grey wi
 test('session.start: prunes approvals older than 60 days', async ($, on) => {
   const w = world(on)
   await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
-  expect(w.ops()).toEqual([{ op: 'prune', days: 60 }])
+  // ...and arms the classic command hooks for this session (they write nothing for an unarmed one).
+  expect(w.ops()).toEqual([{ op: 'prune', days: 60 }, { op: 'state', patch: { armed: true } }])
 })
 
 test('prompt.submit: approval record sent to the bridge; rating token and hidden prompt are not', async ($, on) => {
@@ -144,15 +145,50 @@ test('blind: counts match -> not blind; the next turn only counts new raw bytes'
   expect(w.rows().filter(r => r.signal === 'blind')).toEqual([])
 })
 
-test('the compaction count kept by the classic hook reaches the stale signal', async ($, on) => {
-  const w = world(on, {}, { '/repo/package.json': '{"scripts":{"test":"x"}}', '/h/.claude/state/overseer/sess-1.json': '{"compactions":2}' })
+test('stale (FR-4): a new compaction raises it once, as warn; the count read back is what triggers it', async ($, on) => {
+  const st = '/h/.claude/state/overseer/sc-1.json'
+  const w = world(on, {}, { [st]: '{"compactions":2}' }, { sid: 'sc-1' })
+  await $.turn.complete(turn('hello'))
+  await $.turn.complete(turn('hello again'))
+  const stale = w.rows().filter(r => r.signal === 'stale')
+  expect(stale.length).toBe(1)
+  expect(stale[0].would).toBe('warn')
+  expect(stale[0].detail.triggers).toEqual(['compaction'])
+  expect(stale[0].detail.compactions).toBe(2)
+  // The seen count goes to the state file, so a reloaded mod does not raise it again.
+  expect(w.ops().filter(o => o.op === 'state').pop()!.patch.seen.compactions).toBe(2)
+})
+
+test('stale (FR-4): no compaction -> no stale; a pinned-rule break and a second evidence-less claim each raise it', async ($, on) => {
+  const w = world(on, {}, { '/repo/package.json': '{"scripts":{"test":"x"}}', '/h/.claude/state/overseer/raw/sp-1.count': '...' }, { sid: 'sp-1' })
   await $.prompt.submit({ text: 'go' } as never)
+  await $.turn.complete(turn('hello'))
+  expect(w.rows().filter(r => r.signal === 'stale')).toEqual([])
+  await $.tool.call({ tool: 'Bash', command: 'npm i' } as never)
+  await $.turn.complete(turn('installed'))
+  expect(w.rows().filter(r => r.signal === 'stale').map(r => r.detail.triggers)).toEqual([['pin_violation']])
   await $.tool.call({ tool: 'Edit', file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' } as never)
   await $.turn.complete(turn('Done.'))
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a.ts' } as never)
   await $.turn.complete(turn('Done, shipped.'))
-  const stale = w.rows().find(r => r.signal === 'stale')
-  expect(stale.would).toBe('handoff')
-  expect(stale.detail.compactions).toBe(2)
+  const last = w.rows().filter(r => r.signal === 'stale').pop()
+  expect(last.detail.triggers).toEqual(['evidenceless_claims'])
+  expect(last.would).toBe('warn')
+})
+
+test('mod reload mid-session: the raw count seen is read back from state, no false no_events', async ($, on) => {
+  // A fresh observer (as after a reload) for a session whose state already saw 3 raw tool calls.
+  const w = world(on, {}, { '/h/.claude/state/overseer/raw/rl-1.count': '...', '/h/.claude/state/overseer/rl-1.json': '{"seen":{"raw":3}}' }, { sid: 'rl-1' })
+  await $.turn.complete(turn('ok'))
+  expect(w.rows().filter(r => r.signal === 'blind')).toEqual([])
+})
+
+test('blind raw_missing: tool calls parsed but no classic count file -> grey, not green', async ($, on) => {
+  const w = world(on, {}, {}, { sid: 'rm-1' })
+  await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
+  await $.turn.complete(turn('ok'))
+  expect(w.rows().filter(r => r.signal === 'blind').map(r => r.detail.reason)).toEqual(['raw_missing'])
+  expect(w.ops().filter(o => o.op === 'state').pop()!.patch.dot).toBe('grey')
 })
 
 test('prompt.submit from a task notification or an agent hand-back is not recorded', async ($, on) => {
@@ -164,7 +200,7 @@ test('prompt.submit from a task notification or an agent hand-back is not record
 })
 
 test('turn.complete: code repo, done-claim with no test run -> would block; state written', async ($, on) => {
-  const w = world(on, {}, { '/repo/package.json': JSON.stringify({ scripts: { test: 'vitest' } }) })
+  const w = world(on, {}, { '/repo/package.json': JSON.stringify({ scripts: { test: 'vitest' } }), '/h/.claude/state/overseer/raw/sess-1.count': '.' })
   await $.prompt.submit({ text: 'fix the bug' } as never)
   await $.tool.call({ tool: 'Edit', file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' } as never)
   await $.turn.complete(turn('All tests pass, shipped.'))

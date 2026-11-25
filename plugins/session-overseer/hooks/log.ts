@@ -1,11 +1,12 @@
 // Calls the store bridge (scripts/store.cjs). The mod's $.fs has no append and no file mode, so
 // every disk write goes through one node child with the payload on stdin. Awaited, with a short
-// timeout; the bridge stamps each row's `ms` from `t0` (handler start), so `ms` includes the spawn.
+// timeout (bounded, so `ms` is exact and a hung child cannot hold the session long); the bridge stamps each row's `ms` from `t0` (handler start), so `ms` includes the spawn.
 
 import type { EngineInterface as Engine } from 'claude-code'
 import type { Row } from './observer.ts'
 
-export const STORE_TIMEOUT_MS = 2_000
+// The bridge normally takes ~20 ms; a hung child costs the person at most this much.
+export const STORE_TIMEOUT_MS = 500
 
 export type Paths = { home: string; stateDir: string; maskJs: string; root: string }
 

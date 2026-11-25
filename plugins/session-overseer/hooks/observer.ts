@@ -47,6 +47,10 @@ export class Observer {
   turnRuns: Run[] = []
   worst: Would = 'none'
   blind: BlindReason | 'failtest' | null = null
+  // FR-4 inputs already seen, so each one raises `stale` once. register.ts keeps these (and the raw
+  // count) in the state file, so a mod reload mid-session does not count old inputs again.
+  seen = { raw: 0, compactions: 0, canary_misses: 0 }
+  turnPins = 0
 
   constructor(deps: Deps) {
     this.deps = deps
@@ -73,7 +77,10 @@ export class Observer {
     const rows: Row[] = []
     this.parsedTools++
     const seq = ++this.seq
-    for (const id of pinViolations(this.deps.pins, tool, input)) this.add(rows, { event: 'tool.call', signal: 'pin_violation', would: 'warn', detail: { pin: id, tool, seq } })
+    for (const id of pinViolations(this.deps.pins, tool, input)) {
+      this.turnPins++
+      this.add(rows, { event: 'tool.call', signal: 'pin_violation', would: 'warn', detail: { pin: id, tool, seq } })
+    }
     if (tool === 'Bash' && typeof input.command === 'string') {
       const run: Run = { seq, command: input.command, ok: !result.isError }
       this.runs.push(run)
@@ -94,14 +101,22 @@ export class Observer {
   }
 
   /**
-   * The end of a main-loop turn: done-claim, claims vs git, blind check. `rawTools` = main-loop tool
-   * calls the classic PostToolUse hook counted this turn; `compactions` = the count the classic
+   * The end of a main-loop turn: done-claim, claims vs git, stale, blind check. `rawTools` = main-loop
+   * tool calls the classic PostToolUse hook counted this turn (null = its count file is absent,
+   * undefined = not known, as in history replay); `compactions` = the count the classic
    * SessionStart(compact) hook keeps (scripts/classic.cjs).
    */
-  async turn(answer: string, x: { cwd: string; ccVersion: string; tested: string | null; rawTools?: number; compactions?: number; canary?: { alerts: number; misses: number } }): Promise<Row[]> {
+  async turn(answer: string, x: { cwd: string; ccVersion: string; tested: string | null; rawTools?: number | null; compactions?: number; canary?: { alerts: number; misses: number } }): Promise<Row[]> {
     const rows: Row[] = []
     const rawTools = x.rawTools ?? this.parsedTools
     if (x.compactions !== undefined) this.stale.compactions = x.compactions
+    // FR-4: compaction count, pinned-rule violation, evidence-less claim twice, canary miss (one input).
+    const triggers: string[] = []
+    if (this.stale.compactions > this.seen.compactions) triggers.push('compaction')
+    if (this.turnPins > 0) triggers.push('pin_violation')
+    if (x.canary && x.canary.misses > this.seen.canary_misses) triggers.push('canary_miss')
+    this.seen.compactions = Math.max(this.seen.compactions, this.stale.compactions)
+    if (x.canary) this.seen.canary_misses = Math.max(this.seen.canary_misses, x.canary.misses)
     const claim = detectClaim(this.deps.detector, answer)
     if (claim.claim) {
       const type: TaskType = this.contract ? taskType(this.contract, this.edits) : 'non-repo'
@@ -128,14 +143,17 @@ export class Observer {
         }
       }
       this.add(rows, { event: 'turn.complete', signal: 'claim', would, detail })
-      if (evidenceless && onEvidencelessClaim(this.stale) === 'stale') this.add(rows, { event: 'turn.complete', signal: 'stale', would: 'handoff', detail: { evidenceless: this.stale.evidenceless, compactions: this.stale.compactions } })
+      if (evidenceless && onEvidencelessClaim(this.stale) === 'stale') triggers.push('evidenceless_claims')
     }
-    const reason = blindReason({ toolTurn: rawTools > 0, parsedEvents: this.parsedTools, ccVersion: x.ccVersion, tested: x.tested })
+    // Warn only until S5.6 calibration (FR-4: a signal may hand off only at precision >= 0.8).
+    if (triggers.length) this.add(rows, { event: 'turn.complete', signal: 'stale', would: 'warn', detail: { triggers, compactions: this.stale.compactions, evidenceless: this.stale.evidenceless, pins: this.turnPins, canary_misses: this.seen.canary_misses } })
+    const reason = blindReason({ toolTurn: rawTools > 0, parsedEvents: this.parsedTools, ccVersion: x.ccVersion, tested: x.tested, rawMissing: x.rawTools === null })
     this.blind = reason
     if (reason) this.add(rows, { event: 'turn.complete', signal: 'blind', would: 'none', detail: { reason, raw_tools: rawTools, parsed_tools: this.parsedTools } })
     if (!rows.length) rows.push({ event: 'turn.complete', signal: 'timing', would: 'none', detail: { check_runs: this.turnRuns.filter(r => isCheckCommand(r.command)).length } })
     this.parsedTools = 0
     this.turnRuns = []
+    this.turnPins = 0
     return rows
   }
 
