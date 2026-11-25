@@ -300,3 +300,18 @@ test('[S2.9] the scan catches a planted home path and a real-looking uuid', () =
   assert.ok(hits.includes('planted.txt: home path'), hits.join('\n'))
   assert.ok(hits.some(h => h.startsWith('planted.txt: uuid')), hits.join('\n'))
 })
+
+test('hooks.json: failed tool calls are counted too (PostToolUseFailure runs the same count command)', () => {
+  // PostToolUse fires for successful calls only: without the failure hook a turn whose calls all
+  // failed leaves no count file and the mod reports a false raw_missing.
+  const { hooks } = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8'))
+  const cmd = e => hooks[e][0].hooks[0].command
+  assert.match(cmd('PostToolUse'), /classic\.cjs tool$/)
+  assert.equal(cmd('PostToolUseFailure'), cmd('PostToolUse'))
+  assert.equal(hooks.PostToolUseFailure[0].matcher, '')
+  // A PostToolUseFailure input (no tool_response, has error) counts like any other call.
+  const dir = tmp()
+  arm(dir)
+  assert.equal(handle('tool', { session_id: SID, hook_event_name: 'PostToolUseFailure', tool_name: 'Bash', error: 'Exit code 2' }, { OVERSEER_STATE_DIR: dir }), 'counted')
+  assert.equal(fs.statSync(path.join(dir, 'raw', `${SID}.count`)).size, 1)
+})

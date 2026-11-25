@@ -57,7 +57,7 @@
       "name": "session-overseer",
       "source": "./plugins/session-overseer",
       "description": "Log-only collector: watches done-claims, claims vs git, loops, compactions, pinned-rule breaks and approvals, and logs what it would have done. Takes no action.",
-      "version": "0.1.1"
+      "version": "0.1.2"
     },
     {
       "name": "statusline",

@@ -1,6 +1,6 @@
 {
   "name": "session-overseer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Log-only collector: watches done-claims, claims vs git, loops, compactions, pinned-rule breaks and approvals, and logs what it would have done. Takes no action.",
   "author": {
     "name": "claude-mods"

@@ -3,8 +3,10 @@
 // Classic command hooks (hooks.json "hooks"), for the two inputs mod hooks cannot get:
 //   classic.cjs compact  <- SessionStart matcher "compact": count one compaction (deduped within
 //                           5 s per session) in the state file + one `compaction` log row.
-//   classic.cjs tool     <- PostToolUse: append one byte to raw/<sid>.count, the second count of
-//                           main-loop tool calls that blind detection (FR-19) compares against.
+//   classic.cjs tool     <- PostToolUse + PostToolUseFailure: append one byte to raw/<sid>.count,
+//                           the second count of main-loop tool calls that blind detection (FR-19)
+//                           compares against. PostToolUse fires for successful calls only, so a
+//                           turn whose calls all failed would leave no count file (false raw_missing).
 // Prints nothing and always exits 0: a classic hook's output would reach the session.
 // Same bails as the mod: OVERSEER_CHECKER=1, the OFF file, subagent input (agent_id). And a session
 // the mod never armed (state `armed`, written at its session.start / prompt.submit): with the
