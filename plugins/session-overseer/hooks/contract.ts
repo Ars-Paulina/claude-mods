@@ -29,19 +29,24 @@ export function hasChecks(files: { packageJson: string | null; makefile: string 
   return false
 }
 
-const CHECK_CMD = new RegExp([
-  String.raw`\b(pnpm|npm|yarn|bun)\s+(run\s+)?(test|lint|build|check|typecheck)\b`,
-  String.raw`\bpnpm\s+(exec|dlx)\s+(vitest|jest|tsc|eslint|playwright)\b`,
-  String.raw`\b(vitest|jest|pytest|tsc|eslint|ruff|mypy)\b`,
-  String.raw`\bpython3?\s+-m\s+(pytest|unittest)\b`,
-  String.raw`\bmake\s+(test|check|lint|build)\b`,
-  String.raw`\bcargo\s+(test|build|clippy|check)\b`,
-  String.raw`\bgo\s+(test|build|vet)\b`,
-  String.raw`\bnode\s+--test\b`,
-  String.raw`\bclaude\s+plugin\s+(test|validate)\b`,
-].join('|'))
+// A check command at command position only: each segment of the command line (split on ; && || |
+// & newline and subshell parens) after leading VAR=value, env, time and timeout words. A tool name
+// anywhere else (`cat vitest.config.ts`, `git log -- jest.config.js`) is not a check run.
+const CHECK_HEAD = new RegExp('^(?:' + [
+  String.raw`(pnpm|npm|yarn|bun)\s+(run\s+)?(test|lint|build|check|typecheck)\b`,
+  String.raw`(pnpm\s+(exec|dlx)|npx|bunx)\s+(vitest|jest|tsc|eslint|playwright)\b`,
+  String.raw`(\S*/)?(vitest|jest|pytest|tsc|eslint|ruff|mypy)(\s|$)`,
+  String.raw`python3?\s+-m\s+(pytest|unittest|mypy)\b`,
+  String.raw`make\s+(test|check|lint|build)\b`,
+  String.raw`cargo\s+(test|build|clippy|check)\b`,
+  String.raw`go\s+(test|build|vet)\b`,
+  String.raw`node\s+--test\b`,
+  String.raw`claude\s+plugin\s+(test|validate)\b`,
+].join('|') + ')')
+const LEAD = /^(?:(?:[A-Za-z_]\w*=\S*|env|time|timeout\s+\S+)\s+)*/
 
-export const isCheckCommand = (command: string) => CHECK_CMD.test(command)
+export const isCheckCommand = (command: string) =>
+  command.split(/&&|\|\||[;|&\n()]/).some(seg => CHECK_HEAD.test(seg.trim().replace(LEAD, '')))
 
 /**
  * Freshness: a recognized check command exited 0 after the last edit to the claimed files (all

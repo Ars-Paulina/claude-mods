@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { hasChecks, isFresh, taskType } from './contract.ts'
+import { hasChecks, isCheckCommand, isFresh, taskType } from './contract.ts'
 import { makeDetector } from './claims.ts'
 import { compilePins } from './pins.ts'
 import { Observer } from './observer.ts'
@@ -45,4 +45,11 @@ test('hasChecks: package.json scripts, Makefile target, pyproject tool, other ma
   expect(hasChecks({ ...none, makefile: 'build:\n\tgo build' })).toBe(true)
   expect(hasChecks({ ...none, pyproject: '[tool.pytest.ini_options]' })).toBe(true)
   expect(hasChecks({ ...none, other: true })).toBe(true)
+})
+
+test('check command at command position only: a tool name as an argument is not a test run', () => {
+  for (const cmd of ['pnpm test', 'cd x && pnpm test 2>&1 | tail -3', 'CI=1 npx vitest run', './node_modules/.bin/tsc --noEmit -p .', 'timeout 60 pytest -q', 'python -m pytest', '(cd a; make test)']) expect(isCheckCommand(cmd)).toBe(true)
+  for (const cmd of ['cat vitest.config.ts', 'ls tests/pytest', 'git log -- jest.config.js', 'grep -r eslint .', 'echo pnpm test', 'vim tsconfig.json']) expect(isCheckCommand(cmd)).toBe(false)
+  // So reading a test config after an edit does not make a "tests pass" claim fresh.
+  expect(isFresh([{ seq: 3, command: 'cat vitest.config.ts', ok: true }], [{ seq: 2, file: '/r/a.ts' }], [])).toBe(false)
 })
