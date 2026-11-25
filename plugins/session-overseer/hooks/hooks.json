@@ -2,6 +2,7 @@
   "modules": ["./register.ts"],
   "hooks": {
     "SessionStart": [{ "matcher": "compact", "hooks": [{ "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/classic.cjs compact" }] }],
-    "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/classic.cjs tool" }] }]
+    "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/classic.cjs tool" }] }],
+    "PostToolUseFailure": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/classic.cjs tool" }] }]
   }
 }

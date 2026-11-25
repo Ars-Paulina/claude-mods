@@ -54,7 +54,7 @@ What each input comes from, checked in a headless spike (`claude -p --plugin-dir
 | subagent work | mod `tool.call` / `turn.complete` | `agentId` | yes; skipped |
 | compaction | classic `SessionStart` command hook, matcher `compact` | `source` | yes (`claude -p --resume <id> "/compact"`) |
 | compaction | classic `PostCompact` | | fires; not hooked, so one compaction counts once |
-| raw tool count | classic `PostToolUse` command hook | `session_id`, `agent_id` | yes |
+| raw tool count | classic `PostToolUse` (successful calls) and `PostToolUseFailure` (failed calls) command hooks | `session_id`, `agent_id` | yes |
 | end of turn | classic `Stop` | | in the types only; not used |
 | classic hooks from the mod | mod `classic.*` | | skipped by the default plugin security policy, with a visible notice each time, so not used |
 
