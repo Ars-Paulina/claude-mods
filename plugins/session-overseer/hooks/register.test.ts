@@ -42,7 +42,7 @@ function world(on: On, env: Record<string, string> = {}, files: Record<string, s
     return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
   })
   for (const event of ['turn.complete', 'prompt.submit', 'session.start'] as const) {
-    on(event, ($, e: any) => { core.push({ event, e }); return (event === 'turn.complete' ? { text: e.answer } : event === 'session.start' ? { cwd: '/repo' } : { text: e.text }) as never })
+    on(event, (_$: unknown, e: any) => { core.push({ event, e }); return (event === 'turn.complete' ? { text: e.answer } : event === 'session.start' ? { cwd: '/repo' } : { text: e.text }) as never })
   }
   on('tool.call', ($, e: any) => { core.push({ event: 'tool.call', e }); return { ref: 1, result: { stdout: 'ok', stderr: '', interrupted: false }, text: 'ok' } as never })
   const ops = () => stores.flatMap(s => s.ops)

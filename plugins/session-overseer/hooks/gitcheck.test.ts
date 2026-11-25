@@ -2,6 +2,9 @@ import { expect, test } from 'claude-code/testing'
 
 import { gitCheck } from './gitcheck.ts'
 
+// The test runner has timers; the mod's type set (types: []) does not declare them.
+declare const setTimeout: (fn: (v?: unknown) => void, ms: number) => unknown
+
 // A real temp git repo is used in scripts/scripts.test.cjs (the mod test kit runs no processes).
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 

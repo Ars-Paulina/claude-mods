@@ -12,6 +12,9 @@ import { compilePins } from '../hooks/pins.ts'
 import type { Pin } from '../hooks/pins.ts'
 import type { Deps } from '../hooks/observer.ts'
 
+// Node 24.2+ sets import.meta.main; older @types/node does not declare it.
+declare global { interface ImportMeta { main: boolean } }
+
 export const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 export const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex')
