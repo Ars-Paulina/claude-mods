@@ -1,0 +1,9 @@
+{
+  "phrases": [
+    "done", "all done", "fixed", "is fixed", "now fixed", "tested", "tests pass", "tests passed", "tests are passing",
+    "all tests pass", "all green", "passing", "works now", "now works", "it works", "working now", "shipped",
+    "committed", "pushed", "merged", "complete", "completed", "finished", "resolved", "verified", "ready to merge",
+    "build passes", "lint passes", "checks pass", "implemented"
+  ],
+  "negators": ["not", "no", "never", "isn't", "aren't", "wasn't", "haven't", "hasn't", "didn't", "don't", "doesn't", "yet", "until", "before", "once", "if", "when", "unless", "still"]
+}
