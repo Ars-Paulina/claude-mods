@@ -244,6 +244,8 @@ test('replay-history: reader rows -> pointer-only rows per session; score-replay
   const score = JSON.parse(s.stdout)
   assert.deepEqual(score.unreplayed, ['22222222-2222-2222-2222-222222222222'])
   assert.deepEqual([score.classes.loop.all.k, score.classes.loop.all.n, score.classes.loop.all.fp], [1, 1, 0])
+  // 1 labelled positive is below the 5 a recall needs.
+  assert.equal(score.classes.loop.all.status, 'insufficient data')
   assert.deepEqual([score.classes.false_done.all.k, score.classes.false_done.all.n], [1, 1])
   assert.equal(score.classes.false_done.by_stratum['git-heavy'].k, 1)
   assert.deepEqual([score.classes.stale.all.n, score.classes.stale.all.fp], [0, 1])

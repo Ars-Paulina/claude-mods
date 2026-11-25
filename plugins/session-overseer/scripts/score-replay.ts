@@ -19,12 +19,15 @@ export const CLASS_SIGNALS: Record<string, string[]> = {
   stale: ['stale', 'compaction', 'pin_violation'],
 }
 
-type Cell = { k: number; n: number; interval90: { lo: number; hi: number }; fp: number; negatives: number; fp_rate: number | null }
+// Fewer labelled positives than this: the recall is reported but marked, never used as a pass.
+export const MIN_POSITIVES = 5
+
+type Cell = { k: number; n: number; interval90: { lo: number; hi: number }; fp: number; negatives: number; fp_rate: number | null; status: 'measured' | 'insufficient data' }
 
 function cell(pos: boolean[], neg: boolean[]): Cell {
   const k = pos.filter(Boolean).length
   const fp = neg.filter(Boolean).length
-  return { k, n: pos.length, interval90: clopperPearson(k, pos.length), fp, negatives: neg.length, fp_rate: neg.length ? round(fp / neg.length) : null }
+  return { k, n: pos.length, interval90: clopperPearson(k, pos.length), fp, negatives: neg.length, fp_rate: neg.length ? round(fp / neg.length) : null, status: pos.length < MIN_POSITIVES ? 'insufficient data' : 'measured' }
 }
 
 export function scoreReplay(labels: Record<string, string>[], replayDir: string) {
