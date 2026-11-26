@@ -202,8 +202,11 @@ export const mergePending = (old: Item[], nextN: number, lines: Parsed['lines'])
   const known = new Map(old.map(i => [i.n, i]))
   const keep = new Set<number>()
   const fresh: string[] = []
+  const byText = new Map(old.map(i => [i.text.toLowerCase(), i.n]))
   for (const l of lines) {
-    if (l.n !== null && known.has(l.n) && !keep.has(l.n)) keep.add(l.n)
+    // An item written back as "new" with the card's own wording is that item, not a second one.
+    const n = l.n !== null && known.has(l.n) && !keep.has(l.n) ? l.n : byText.get(l.text.toLowerCase())
+    if (n !== undefined && !keep.has(n)) keep.add(n)
     else fresh.push(l.text)
   }
 

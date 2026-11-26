@@ -60,6 +60,8 @@ test('mergePending ignores a renumber attempt, keeps the card wording, drops dup
     { n: 6, text: 'a number the card never had' },
     { n: 7, text: 'same number twice' },
   ])
+  // the model drops the number and writes the item back as new: it keeps its number
+  expect(mergePending(old, 6, [{ n: null, text: 'Push the branch' }]).pending).toEqual(old)
 })
 
 test('parseFullList reads a numbered ⏳ list with Claude numbers, and not a delta line', async () => {
