@@ -72,9 +72,10 @@ async function runCard($: any) {
   }
 }
 
-async function fail($: any, batch: Reply[], why: string) {
+async function fail($: any, batch: Reply[], hadOverflow: boolean, why: string) {
   $.ui.log(`session-board: card not updated: ${why}`)
   queue = [...batch, ...queue] // the replies are deltas: keep them for the retry
+  isOverflowed ||= hadOverflow
   const n = normalize(await read($, note))
   const now = await $.clock.now()
   await save($, { failCount: (n?.failCount ?? 0) + 1, staleSince: n?.staleSince || now })
@@ -85,7 +86,9 @@ async function askCard($: any) {
   const n = normalize(await read($, note))
   if (!n || queue.length === 0) return
 
+  const sid = id
   const turn = n.cardTurn
+  const before = JSON.stringify(n.pending)
   const batch = queue
   queue = []
   const hadOverflow = isOverflowed
@@ -104,9 +107,10 @@ async function askCard($: any) {
   try {
     r = await $.model.complete({ model: summarizer, system, prompt, maxTokens: 300, timeoutMs })
   } catch (err) {
-    return fail($, batch, String(err))
+    return id === sid ? fail($, batch, hadOverflow, String(err)) : undefined
   }
-  if (!r.isAnswered) return fail($, batch, String(r.reason))
+  if (id !== sid) return // `/clear` happened meanwhile: this answer belongs to the old conversation
+  if (!r.isAnswered) return fail($, batch, hadOverflow, String(r.reason))
 
   $.ui.log(`session-board: card call ${summarizer} in=${r.usage?.input_tokens ?? '?'} out=${r.usage?.output_tokens ?? '?'}`, { to: 'debug' })
 
@@ -114,10 +118,17 @@ async function askCard($: any) {
   const fresh = normalize(await read($, note))
   if (!fresh) return
 
-  const patch: Partial<Note> = { failCount: 0, staleSince: 0, freshTurn: hadOverflow ? '' : turn }
+  // The list changed while the model was thinking (a full list in a newer reply, or the `set` tool):
+  // its answer is about a list that no longer exists. Keep Goal and Now, and read the replies again.
+  const isListMoved = isPendingOn && JSON.stringify(fresh.pending) !== before
+  const patch: Partial<Note> = isListMoved ? {} : { failCount: 0, staleSince: 0, freshTurn: hadOverflow ? '' : turn }
   if (p.goal && (!real(fresh.goal) || p.isGoalChanged)) patch.goal = p.goal
   if (p.now) Object.assign(patch, { topic: p.now, isTopicAuto: true })
-  if (!isPendingOn) patch.isPendingLive = false
+  if (isListMoved) {
+    queue = [...batch, ...queue]
+    isOverflowed ||= hadOverflow
+    isAskAgain = true
+  } else if (!isPendingOn) patch.isPendingLive = false
   else if (after.length === 0) patch.isPendingLive = true // the list came from Claude's own full list
   else if (p.hasPending) Object.assign(patch, mergePending(fresh.pending, fresh.nextN, p.lines), { isPendingLive: true })
   else patch.isPendingLive = false // no list in the answer: say so, the next full list repairs it

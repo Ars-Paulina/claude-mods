@@ -92,6 +92,7 @@ test('shouldSkip: no ⏳ or 👉 and a goal already set means no model call', as
 
 test('isAgentMsg spots hand-backs and harness notices, not the user', async () => {
   expect(isAgentMsg('[Subagent hand-back] The task finished')).toBe(true)
+  expect(isAgentMsg('<system-reminder>\n[Subagent hand-back] wrapped in a tag')).toBe(true)
   expect(isAgentMsg('\n<task-notification>\n<task-id>x</task-id>')).toBe(true)
   expect(isAgentMsg('fix the login bug [Subagent hand-back] mentioned later')).toBe(false)
 })

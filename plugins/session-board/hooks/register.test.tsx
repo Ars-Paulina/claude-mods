@@ -405,3 +405,48 @@ test('summarizer option picks the model; a model that will not answer leaves the
   expect(saved(store).failCount).toBe(1)
   expect(saved(store).freshTurn).toBe('')
 })
+
+test('a full list that arrives during a call is not undone by that call\'s older answer', async ($, on) => {
+  let release: (v: unknown) => void = () => {}
+  let calls = 0
+  const store: Record<string, unknown> = { [`note:${ID}`]: { state: 'your-turn', goal: 'Ship Acme', pending: ['one', 'two'], firstPrompt: 'x', firstAnswer: 'y' } }
+  engine(on, store)
+  on('model.complete', () => {
+    calls++
+    if (calls === 1) return new Promise(r => (release = r)) as never
+
+    return answered('GOAL: Ship Acme\nNOW: Later step\nPENDING:\n1. one\n2. two\n3. three\n4. four')
+  })
+  core(on)
+  await start($)
+  await $.turn.complete(turn('👉 Next (no reply needed): go', 't1'))
+  await $.turn.complete(turn('⏳ **Pending:**\n1. one\n2. two\n3. three\n4. four\n\n👉 Next (no reply needed): go', 't2'))
+  release(answered('GOAL: Ship Acme\nNOW: Old step\nPENDING:\n1. one\n2. two')) // written before items 3 and 4 existed
+  await settle(80)
+
+  const n = saved(store)
+  expect(n.pending.map((i: any) => i.n)).toEqual([1, 2, 3, 4])
+  expect(n.freshTurn).toBe('t2')
+  expect(calls).toBe(2)
+})
+
+test('/clear during a call: the old conversation\'s answer never lands on the new card', async ($, on) => {
+  let sid = ID
+  let release: (v: unknown) => void = () => {}
+  const store: Record<string, unknown> = {}
+  engine(on, store, [], () => sid)
+  on('model.complete', () => new Promise(r => (release = r)) as never)
+  core(on)
+  await start($)
+  await $.prompt.submit({ text: 'first conversation' } as never).catch(() => {})
+  await $.turn.complete(turn('👉 Next (no reply needed): go', 't1'))
+  sid = 'sess-2'
+  await $.prompt.submit({ text: 'second conversation' } as never).catch(() => {})
+  release(answered('GOAL: The first purpose\nNOW: Old step\nPENDING:\n+ old item'))
+  await settle()
+
+  const n = saved(store, 'note:sess-2')
+  expect(n.goal).toBe('')
+  expect(n.pending).toEqual([])
+  expect(n.failCount).toBe(0)
+})

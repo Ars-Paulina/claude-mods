@@ -31,11 +31,13 @@ export const tail = (text: string, max = TAIL_MAX) => (text.length > max ? text.
 const plain = (s: string) => s.replace(/\*\*|__|`/g, '')
 
 // Agents and the harness also "submit prompts"; those are not the user talking.
+// Only the hand-back prefix was seen in real stored prompts; the other two are a guess.
 const AGENT_PREFIXES = ['[Subagent hand-back]', '<task-notification>', '[SYSTEM NOTIFICATION']
 export const isAgentMsg = (text: string) => {
-  const t = String(text ?? '').trimStart()
+  const raw = String(text ?? '').trimStart()
+  const bare = clean(text) // a wrapper tag may sit in front of the prefix
 
-  return AGENT_PREFIXES.some(p => t.startsWith(p))
+  return AGENT_PREFIXES.some(p => raw.startsWith(p) || bare.startsWith(p))
 }
 
 // The reply's last 👉 line decides the light and the Next row; no 👉 line, no change.
