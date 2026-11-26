@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import { detect, mask } from './detect'
-import { applyDelta, buildPrompt, isAgentMsg, mergePending, parseCard, parseDelta, parseFullList, parseNext, real, shouldSkip, tail, BATCH_MAX, PROMPT_MAX } from './haiku'
+import { applyDelta, buildPrompt, isAgentMsg, parseCard, parseDelta, parseFullList, parseNext, real, shouldSkip, tail, BATCH_MAX, PROMPT_MAX } from './haiku'
 import { apply, card, isOld, normalize, type Note } from './note'
 
 const TOOL = 'mcp__session-board__set'
@@ -29,31 +29,23 @@ let isPendingOn = true
 let timeoutMs = 30_000
 
 // The raw prompt and reply ends live here only: memory, never the store.
-// Who settles the pending list for a reply: `code` = a full list or a delta applied exactly in code;
-// `closes` = a delta whose adds are applied but one close-by-wording still needs the model; `model` = the rest.
-type Reply = { text: string; by: 'code' | 'closes' | 'model' }
 let lastPrompt = ''
-let queue: Reply[] = [] // replies the cheap model has not read yet, oldest first
-let isOverflowed = false // a reply fell off the queue: the card cannot be called fresh
+let queue: string[] = [] // reply ends the cheap model has not read yet, oldest first
 let isAsking = false
 let isAskAgain = false
 
 const resetMemory = () => {
   lastPrompt = ''
   queue = []
-  isOverflowed = false
 }
 
 // Secrets are masked before anything is kept, stored or sent. A throw here is
 // the caller's cue to keep and send nothing.
 const safe = (text: string) => mask(text, detect(text))
 
-const enqueue = (r: Reply) => {
-  queue.push(r)
-  while (queue.length > 1 && queue.reduce((sum, q) => sum + q.text.length, 0) > BATCH_MAX) {
-    queue.shift()
-    isOverflowed = true
-  }
+const enqueue = (text: string) => {
+  queue.push(text)
+  while (queue.length > 1 && queue.reduce((sum, q) => sum + q.length, 0) > BATCH_MAX) queue.shift()
 }
 
 // One call at a time; turns that end meanwhile are read together by one more call.
@@ -74,46 +66,34 @@ async function runCard($: any) {
   }
 }
 
-async function fail($: any, batch: Reply[], hadOverflow: boolean, why: string) {
+async function fail($: any, batch: string[], why: string) {
   $.ui.log(`session-board: card not updated: ${why}`)
-  queue = [...batch, ...queue] // the replies are deltas: keep them for the retry
-  isOverflowed ||= hadOverflow
+  queue = [...batch, ...queue] // keep the replies for the retry
   const n = normalize(await read($, note))
   const now = await $.clock.now()
   await save($, { failCount: (n?.failCount ?? 0) + 1, staleSince: n?.staleSince || now })
 }
 
-// A cheap call rewrites Goal, Now and the pending list from the replies it has not read yet.
+// A cheap call rewrites Goal and Now from the replies it has not read yet.
+// The pending list is never the model's: code keeps it (see onTurn).
 async function askCard($: any) {
   const n = normalize(await read($, note))
   if (!n || queue.length === 0) return
 
   const sid = id
   const turn = n.cardTurn
-  const before = JSON.stringify(n.pending)
   const batch = queue
   queue = []
-  const hadOverflow = isOverflowed
-  isOverflowed = false
-  // Replies up to the last one settled in code need nothing more for the list.
-  const after = batch.slice(batch.map(r => r.by === 'code').lastIndexOf(true) + 1)
-  const isClosesOnly = after.every(r => r.by === 'closes') // their new items are already on the card
-  const { system, prompt } = buildPrompt({
-    goal: real(n.goal),
-    now: real(n.topic),
-    pending: n.pending,
-    prompt: lastPrompt,
-    replies: (after.length ? after : batch.slice(-1)).map(r => r.text),
-  })
+  const { system, prompt } = buildPrompt({ goal: real(n.goal), now: real(n.topic), pending: n.pending, prompt: lastPrompt, replies: batch })
 
   let r: any
   try {
-    r = await $.model.complete({ model: summarizer, system, prompt, maxTokens: 300, timeoutMs })
+    r = await $.model.complete({ model: summarizer, system, prompt, maxTokens: 120, timeoutMs })
   } catch (err) {
-    return id === sid ? fail($, batch, hadOverflow, String(err)) : undefined
+    return id === sid ? fail($, batch, String(err)) : undefined
   }
   if (id !== sid) return // `/clear` happened meanwhile: this answer belongs to the old conversation
-  if (!r.isAnswered) return fail($, batch, hadOverflow, String(r.reason))
+  if (!r.isAnswered) return fail($, batch, String(r.reason))
 
   $.ui.log(`session-board: card call ${summarizer} in=${r.usage?.input_tokens ?? '?'} out=${r.usage?.output_tokens ?? '?'}`, { to: 'debug' })
 
@@ -121,20 +101,9 @@ async function askCard($: any) {
   const fresh = normalize(await read($, note))
   if (!fresh) return
 
-  // The list changed while the model was thinking (a full list in a newer reply, or the `set` tool):
-  // its answer is about a list that no longer exists. Keep Goal and Now, and read the replies again.
-  const isListMoved = isPendingOn && JSON.stringify(fresh.pending) !== before
-  const patch: Partial<Note> = isListMoved ? {} : { failCount: 0, staleSince: 0, freshTurn: hadOverflow ? '' : turn }
+  const patch: Partial<Note> = { failCount: 0, staleSince: 0, freshTurn: turn }
   if (p.goal && (!real(fresh.goal) || p.isGoalChanged)) patch.goal = p.goal
   if (p.now) Object.assign(patch, { topic: p.now, isTopicAuto: true })
-  if (isListMoved) {
-    queue = [...batch, ...queue]
-    isOverflowed ||= hadOverflow
-    isAskAgain = true
-  } else if (!isPendingOn) patch.isPendingLive = false
-  else if (after.length === 0) patch.isPendingLive = true // the list was settled in code
-  else if (p.hasPending) Object.assign(patch, mergePending(fresh.pending, fresh.nextN, isClosesOnly ? p.lines.filter(l => l.n !== null) : p.lines), { isPendingLive: true })
-  else patch.isPendingLive = false // no list in the answer: say so, the next full list repairs it
   await save($, patch)
 }
 
@@ -186,21 +155,24 @@ async function onTurn($: any, e: any) {
   const pointer = parseNext(answer)
   if (pointer) Object.assign(patch, pointer)
   else if (current?.state !== 'blocked') patch.state = 'your-turn'
+  // The pending list: a full list replaces it, a delta line is applied exactly. No model involved.
+  // A close that matches nothing means card and Claude disagree: the list is then not "live",
+  // the marker hook goes quiet, and Claude's next reply carries a full list that repairs it.
   const list = isPendingOn ? parseFullList(answer) : null
   const delta = isPendingOn && !list ? parseDelta(answer) : null
-  let by: Reply['by'] = list ? 'code' : 'model'
-  if (list) patch.pending = list
+  if (!isPendingOn) patch.isPendingLive = false
+  if (list) Object.assign(patch, { pending: list, isPendingLive: true })
   if (delta) {
     const c = normalize(current)
     const r = applyDelta(c?.pending ?? [], c?.nextN ?? 1, delta)
     Object.assign(patch, { pending: r.pending, nextN: r.nextN })
-    by = r.unresolved.length ? 'closes' : 'code'
+    if (r.unresolved.length) patch.isPendingLive = false
   }
 
   const goal = current?.goal ?? ''
   if (shouldSkip(answer, goal)) return save($, patch) // nothing about open work: the card stays as fresh as it was
 
-  enqueue({ text: tail(answer), by })
+  enqueue(tail(answer))
   await save($, { ...patch, cardTurn: String(e.turnId ?? now) })
   // In the background: the turn never waits on it; a failure says why instead of vanishing.
   void runCard($).catch(err => $.ui.log(`session-board: card update failed: ${String(err)}`))

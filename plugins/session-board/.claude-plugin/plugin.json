@@ -15,13 +15,13 @@
     "summarizer": {
       "type": "string",
       "title": "Card model",
-      "description": "The small model that fills the card after each turn.",
+      "description": "The small model that writes the goal and the current step after each turn.",
       "default": "claude-haiku-5-5"
     },
     "haikuPending": {
       "type": "boolean",
-      "title": "Let the card model keep the pending list",
-      "description": "Off: the model writes only the goal and the current step.",
+      "title": "Keep the pending list on the card",
+      "description": "Off: the card shows only the goal, the current step and the next action.",
       "default": true
     }
   },

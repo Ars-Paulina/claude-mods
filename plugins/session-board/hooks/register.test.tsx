@@ -145,7 +145,7 @@ test('card call: one cheap call fills Goal, Now and numbered pending, and the ca
   const shown = await texts(ui)
   expect(asked.length).toBe(1)
   expect(asked[0].model).toBe('claude-haiku-5-5')
-  expect(asked[0].maxTokens).toBe(300)
+  expect(asked[0].maxTokens).toBe(120)
   expect(asked[0].prompt).toContain('⏳ +push the branch')
   expect(shown).toContain('🎯 Goal: Ship the Acme app')
   expect(shown).toContain('🔧 Now: Add a bash permission rule')
@@ -155,7 +155,7 @@ test('card call: one cheap call fills Goal, Now and numbered pending, and the ca
   const n = saved(store)
   expect(n.freshTurn).toBe('t1')
   expect(n.cardTurn).toBe('t1')
-  expect(n.isPendingLive).toBe(true)
+  expect(n.isPendingLive).toBe(false) // no full list seen yet: Claude is not told the card is live
   expect(n.lastSeen > 0).toBe(true)
   expect(logs.some(l => l.includes('card call claude-haiku-5-5 in=11 out=7'))).toBe(true) // every call is logged with its tokens
 })
@@ -455,12 +455,12 @@ test('/clear during a call: the old conversation\'s answer never lands on the ne
 })
 
 test('a delta line is applied in code: a wrong model answer cannot keep a closed item or drop an open one', async ($, on) => {
-  const store: Record<string, unknown> = { [`note:${ID}`]: { state: 'your-turn', goal: 'Ship Acme', pending: ['one', 'two', 'three'], firstPrompt: 'x', firstAnswer: 'y' } }
+  const store: Record<string, unknown> = { [`note:${ID}`]: { state: 'your-turn', goal: 'Ship Acme', pending: ['one', 'two', 'three'], isPendingLive: true, firstPrompt: 'x', firstAnswer: 'y' } }
   engine(on, store)
   on('model.complete', () => answered('GOAL: Ship Acme\nNOW: Step\nPENDING:\n1. one\n2. two\n+ made up'))
   core(on)
   await start($)
-  await $.turn.complete(turn('🟢 Done.\n⏳ +four · ✓#2 two is done\n👉 Next (no reply needed): go', 't1'))
+  await $.turn.complete(turn('🟢 Done.\n⏳ +#4 four · +five · +#1 six · ✓#2 two is done\n👉 Next (no reply needed): go', 't1'))
   await settle()
 
   const n = saved(store)
@@ -468,23 +468,28 @@ test('a delta line is applied in code: a wrong model answer cannot keep a closed
     { n: 1, text: 'one' },
     { n: 3, text: 'three' },
     { n: 4, text: 'four' },
+    { n: 5, text: 'five' }, // no number given: code picks the next one
+    { n: 6, text: 'six' }, // number 1 is taken: code picks the next one
   ])
+  expect(n.nextN).toBe(7)
   expect(n.freshTurn).toBe('t1')
   expect(n.isPendingLive).toBe(true)
 })
 
-test('a close by wording that code cannot match goes to the model, which may close but not add', async ($, on) => {
-  const store: Record<string, unknown> = { [`note:${ID}`]: { state: 'your-turn', goal: 'Ship Acme', pending: ['call the bank about the loan', 'push the branch'], firstPrompt: 'x', firstAnswer: 'y' } }
+test('a close that matches nothing: the item stays, and the list stops being live so Claude sends a full one', async ($, on) => {
+  const store: Record<string, unknown> = { [`note:${ID}`]: { state: 'your-turn', goal: 'Ship Acme', pending: ['call the bank about the loan', 'push the branch'], isPendingLive: true, firstPrompt: 'x', firstAnswer: 'y' } }
   engine(on, store)
-  on('model.complete', () => answered('GOAL: Ship Acme\nNOW: Step\nPENDING:\n2. push the branch\n3. new thing\n+ made up'))
+  on('model.complete', () => answered('GOAL: Ship Acme\nNOW: Step'))
   core(on)
   await start($)
-  await $.turn.complete(turn('⏳ +new thing · ✓phoned the bank\n👉 Next (no reply needed): go', 't1'))
+  await $.turn.complete(turn('⏳ +#3 new thing · ✓phoned the bank · ✓#9\n👉 Next (no reply needed): go', 't1'))
   await settle()
 
-  expect(saved(store).pending).toEqual([
-    { n: 2, text: 'push the branch' },
-    { n: 3, text: 'new thing' },
-  ])
-})
+  expect(saved(store).pending.map((i: any) => i.n)).toEqual([1, 2, 3])
+  expect(saved(store).isPendingLive).toBe(false)
 
+  await $.turn.complete(turn('⏳ **Pending:**\n2. push the branch\n3. new thing\n\n👉 Next (no reply needed): go', 't2'))
+  await settle()
+  expect(saved(store).pending.map((i: any) => i.n)).toEqual([2, 3])
+  expect(saved(store).isPendingLive).toBe(true)
+})
