@@ -4,3 +4,10 @@ __pycache__/
 *.log
 .DS_Store
 .spike.jsonl
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+# per-machine agent tooling files, not committed
+/opencode.json
+/.mcp.json
+/.ignore
