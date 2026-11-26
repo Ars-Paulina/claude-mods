@@ -1,8 +1,11 @@
-import type { Note, State } from '../types'
+import type { Item, Note, State } from '../types'
 
-export type { Note, State }
+import { clean, oneLine, real, MAX_STORED } from './haiku'
 
-export const MAX_PENDING = 5
+export type { Item, Note, State }
+export { clean, real }
+
+export const MAX_PENDING = 5 // rows the card draws; the rest hide behind "+N more"
 export const KEEP_MS = 30 * 24 * 60 * 60 * 1000
 
 const blank: Note = {
@@ -11,6 +14,7 @@ const blank: Note = {
   topic: '',
   stage: '',
   pending: [],
+  nextN: 1,
   next: '',
   firstPrompt: '',
   seed: '',
@@ -20,23 +24,33 @@ const blank: Note = {
   autoAt: 0,
   isTopicAuto: false,
   lastPrompt: '',
+  cardTurn: '',
+  freshTurn: '',
+  isPendingLive: false,
+  failCount: 0,
+  staleSince: 0,
+  lastSeen: 0,
   since: 0,
   updatedAt: 0,
 }
 
-// Cards saved by older versions lack newer fields; fill them so checks never compare undefined.
-export const normalize = (n: Partial<Note> | null | undefined): Note | null => (n ? { ...blank, ...n } : null)
+// Pending arrives as plain strings from the `set` tool and from cards saved by
+// older versions: number those 1..k. Items that already carry a number keep it.
+const toItems = (list: unknown): Item[] =>
+  (Array.isArray(list) ? list : [])
+    .map((v, i) => (v && typeof v === 'object' ? { n: Number((v as Item).n), text: oneLine((v as Item).text, 80) } : { n: i + 1, text: oneLine(v, 80) }))
+    .filter(i => i.text !== '' && Number.isFinite(i.n))
 
-// Card rows must stay one line, with no markup: pasted prompts carry newlines and <tags>.
-export const clean = (v: unknown) => String(v ?? '').replace(/<\/?[a-zA-Z_][^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-const oneLine = (v: unknown, max: number) => clean(v).slice(0, max)
+// Cards saved by older versions lack newer fields; fill them so checks never compare undefined.
+export const normalize = (n: Partial<Note> | null | undefined): Note | null => (n ? { ...blank, ...n, pending: toItems(n.pending) } : null)
 
 // Merge a patch into the old note; `since` moves only when the state changes.
 export const apply = (old: Note | null | undefined, patch: Partial<Note>, now: number): Note => {
   const prev = normalize(old) ?? { ...blank, since: now }
   const merged = { ...prev, ...patch, updatedAt: now }
   merged.since = merged.state === prev.state && old ? prev.since : now
-  merged.pending = (merged.pending ?? []).map(s => oneLine(s, 80)).filter(Boolean).slice(0, MAX_PENDING)
+  merged.pending = toItems(merged.pending).slice(-MAX_STORED)
+  merged.nextN = Math.max(merged.nextN || 1, ...merged.pending.map(i => i.n + 1)) // a number is never handed out twice
   merged.goal = oneLine(merged.goal, 100)
   merged.topic = oneLine(merged.topic, 80)
   merged.stage = oneLine(merged.stage, 20)
@@ -49,6 +63,11 @@ export const apply = (old: Note | null | undefined, patch: Partial<Note>, now: n
 
   return merged
 }
+
+// Fresh = the cheap model finished for the latest turn that asked it. A call in
+// flight, a failed call or a card restored from disk is not fresh. The marker
+// hook in ~/.claude reads these same two fields from the store file.
+export const isFresh = (n: Note) => n.freshTurn !== '' && n.freshTurn === n.cardTurn
 
 const LIGHT: Record<State, { light: string; label: string; color: 'success' | 'warning' | 'error' }> = {
   working: { light: '🟢', label: 'Claude working', color: 'success' },
@@ -64,8 +83,11 @@ export type Card = {
   now: string
   isNowGuess: boolean
   items: string[]
+  more: number
   next: string
 }
+
+const mins = (from: number, now: number) => Math.max(0, Math.floor((now - from) / 60000))
 
 // What the card shows; null means "nothing yet", drawn as a single calm line.
 export const card = (raw: Note | null, now: number): Card | null => {
@@ -73,8 +95,10 @@ export const card = (raw: Note | null, now: number): Card | null => {
   if (!n || (!real(n.goal) && !n.firstPrompt && !real(n.topic) && !n.lastPrompt && n.pending.length === 0)) return null
 
   const look = LIGHT[n.state] ?? LIGHT['your-turn']
-  const mins = Math.max(0, Math.floor((now - n.since) / 60000))
-  const header = [`${look.light} ${look.label}`, n.stage, mins ? `${mins}m` : 'just now'].filter(Boolean).join(' · ')
+  const age = mins(n.since, now)
+  // A failed update must be seen: an old card that looks current is the one thing worse than no card.
+  const stale = n.staleSince > 0 && !isFresh(n) ? `stale ${mins(n.staleSince, now)}m${n.failCount > 1 ? ` ×${n.failCount}` : ''}` : ''
+  const header = [`${look.light} ${look.label}`, n.stage, age ? `${age}m` : 'just now', stale].filter(Boolean).join(' · ')
 
   return {
     color: look.color,
@@ -83,37 +107,10 @@ export const card = (raw: Note | null, now: number): Card | null => {
     isGoalGuess: !real(n.goal),
     now: real(n.topic) || n.lastPrompt,
     isNowGuess: !real(n.topic),
-    items: n.pending,
-    next: n.next || n.pending[0] || '',
+    items: n.pending.slice(0, MAX_PENDING).map(i => `${i.n}. ${i.text}`),
+    more: Math.max(0, n.pending.length - MAX_PENDING),
+    next: n.next || n.pending[0]?.text || '',
   }
-}
-
-// Reads the summarizer's two lines: "GOAL: ..." and "NOW: ...".
-// A line that admits it does not know is worse than no line: drop it and try again later.
-const VAGUE = /\b(unknown|unclear|not (shown|available|provided|known)|no (details|information|context)|can'?t tell)\b/i
-
-const pick = (text: string, label: string, max: number) => {
-  const v = clean(new RegExp(`${label}:\\s*(.+)`, 'i').exec(text)?.[1]).slice(0, max)
-
-  return VAGUE.test(v) ? '' : v
-}
-
-// Cards saved before the vague filter existed may still hold an "Unknown" line.
-export const real = (v: string) => (VAGUE.test(v) ? '' : v)
-
-export const parseSummary = (text: string) => ({ goal: pick(text, 'GOAL', 100), now: pick(text, 'NOW', 80) })
-
-export const MAX_TRIES = 3
-export const NOW_EVERY_MS = 10 * 60 * 1000
-
-// Ask when the goal is still missing (a few tries) or Claude's silence left Now stale.
-export const shouldAsk = (raw: Note, now: number) => {
-  const n = normalize(raw)!
-
-  return (
-    (!real(n.goal) && n.autoTries < MAX_TRIES) ||
-    ((n.isTopicAuto || !real(n.topic)) && now - n.autoAt >= NOW_EVERY_MS)
-  )
 }
 
 export const isOld = (n: Note, now: number) => now - n.updatedAt > KEEP_MS

@@ -1,6 +1,6 @@
 {
   "name": "session-board",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "One calm card above the prompt: what this session is about, whose turn it is, what is pending and the next step",
   "author": {
     "name": "Pedro Malla"
@@ -10,6 +10,18 @@
       "type": "boolean",
       "title": "Show the session card",
       "description": "Kill switch. Off draws nothing and runs nothing.",
+      "default": true
+    },
+    "summarizer": {
+      "type": "string",
+      "title": "Card model",
+      "description": "The small model that fills the card after each turn.",
+      "default": "claude-haiku-5-5"
+    },
+    "haikuPending": {
+      "type": "boolean",
+      "title": "Let the card model keep the pending list",
+      "description": "Off: the model writes only the goal and the current step.",
       "default": true
     }
   },
