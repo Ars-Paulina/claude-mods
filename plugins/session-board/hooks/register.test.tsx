@@ -220,12 +220,15 @@ test('a failed call keeps the card, marks it stale and counts; the next good cal
   expect(n.staleSince > 0).toBe(true)
   expect(n.freshTurn).toBe('')
   expect(n.topic).toBe('Old step')
-  expect(n.pending).toEqual([{ n: 1, text: 'keep me' }])
+  expect(n.pending).toEqual([
+    { n: 1, text: 'keep me' },
+    { n: 2, text: 'missed item' }, // the delta is applied in code, so the list is right even though the call failed
+  ])
 
   await $.turn.complete(turn('👉 Next (no reply needed): go on', 't2'))
   await settle()
   n = saved(store)
-  expect(prompts[1]).toContain('⏳ +missed item') // the reply the failed call held is sent again
+  expect(prompts[1]).toContain('2. missed item') // code already put the item on the card the model is shown
   expect(n.failCount).toBe(0)
   expect(n.staleSince).toBe(0)
   expect(n.freshTurn).toBe('t2')
@@ -256,7 +259,7 @@ test('turns that end during a call are read together by one more call', async ($
   await settle(80)
 
   expect(prompts.length).toBe(2)
-  expect(prompts[1]).toContain('⏳ +middle item')
+  expect(prompts[1]).toContain('1. middle item') // already applied in code
   expect(prompts[1]).toContain('three')
   expect(saved(store).freshTurn).toBe('t3')
   expect(saved(store).pending).toEqual([{ n: 1, text: 'middle item' }])
@@ -450,3 +453,38 @@ test('/clear during a call: the old conversation\'s answer never lands on the ne
   expect(n.pending).toEqual([])
   expect(n.failCount).toBe(0)
 })
+
+test('a delta line is applied in code: a wrong model answer cannot keep a closed item or drop an open one', async ($, on) => {
+  const store: Record<string, unknown> = { [`note:${ID}`]: { state: 'your-turn', goal: 'Ship Acme', pending: ['one', 'two', 'three'], firstPrompt: 'x', firstAnswer: 'y' } }
+  engine(on, store)
+  on('model.complete', () => answered('GOAL: Ship Acme\nNOW: Step\nPENDING:\n1. one\n2. two\n+ made up'))
+  core(on)
+  await start($)
+  await $.turn.complete(turn('🟢 Done.\n⏳ +four · ✓#2 two is done\n👉 Next (no reply needed): go', 't1'))
+  await settle()
+
+  const n = saved(store)
+  expect(n.pending).toEqual([
+    { n: 1, text: 'one' },
+    { n: 3, text: 'three' },
+    { n: 4, text: 'four' },
+  ])
+  expect(n.freshTurn).toBe('t1')
+  expect(n.isPendingLive).toBe(true)
+})
+
+test('a close by wording that code cannot match goes to the model, which may close but not add', async ($, on) => {
+  const store: Record<string, unknown> = { [`note:${ID}`]: { state: 'your-turn', goal: 'Ship Acme', pending: ['call the bank about the loan', 'push the branch'], firstPrompt: 'x', firstAnswer: 'y' } }
+  engine(on, store)
+  on('model.complete', () => answered('GOAL: Ship Acme\nNOW: Step\nPENDING:\n2. push the branch\n3. new thing\n+ made up'))
+  core(on)
+  await start($)
+  await $.turn.complete(turn('⏳ +new thing · ✓phoned the bank\n👉 Next (no reply needed): go', 't1'))
+  await settle()
+
+  expect(saved(store).pending).toEqual([
+    { n: 2, text: 'push the branch' },
+    { n: 3, text: 'new thing' },
+  ])
+})
+

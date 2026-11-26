@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { buildPrompt, isAgentMsg, mergePending, parseCard, parseFullList, parseNext, shouldSkip, tail } from './haiku'
+import { applyDelta, buildPrompt, isAgentMsg, mergePending, parseCard, parseDelta, parseFullList, parseNext, shouldSkip, tail } from './haiku'
 
 test('parseCard reads goal, now, the changed flag and the pending lines', async () => {
   const p = parseCard('GOAL_CHANGED: no\nGOAL: Ship the Acme app\nNOW: Add a bash permission rule\nPENDING:\n2. push the branch\n+ fix the hook\n')
@@ -70,6 +70,28 @@ test('parseFullList reads a numbered ⏳ list with Claude numbers, and not a del
   ])
   expect(parseFullList('🟢 Done.\n⏳ +fix hook · ✓2 pushed branch\n👉 Next (no reply needed): tests')).toBe(null)
   expect(parseFullList('no list here\n1. a numbered step\n2. another')).toBe(null)
+})
+
+// This pins the delta grammar the Traffic Teacher style writes between full lists.
+test('parseDelta + applyDelta: code opens and closes items exactly; only an unmatched wording is left over', async () => {
+  expect(parseDelta('🟢 Done.\n⏳ **Pending:**\n1. a\n2. b')).toBe(null)
+  expect(parseDelta('no pending line')).toBe(null)
+  const d = parseDelta('🟢 Done.\n⏳ +fix the hook · ✓#2 pushed the branch · ✓write tests for the parser · ✓3 PRs merged\n👉 Next (no reply needed): go')!
+  expect(d).toEqual({ add: ['fix the hook'], closeN: [2], closeText: ['write tests for the parser', '3 PRs merged'] })
+
+  const old = [
+    { n: 1, text: 'write tests' },
+    { n: 2, text: 'push the branch' },
+    { n: 3, text: 'call the bank' },
+  ]
+  const r = applyDelta(old, 4, d)
+  expect(r.pending).toEqual([
+    { n: 3, text: 'call the bank' }, // "✓3 PRs merged" has no #: it is wording, not item 3
+    { n: 4, text: 'fix the hook' },
+  ])
+  expect(r.nextN).toBe(5)
+  expect(r.unresolved).toEqual(['3 PRs merged'])
+  expect(applyDelta(old, 4, { add: [], closeN: [9], closeText: [] }).pending).toEqual(old) // a number not on the card closes nothing
 })
 
 // This table pins the Traffic Teacher 👉 grammar (~/.claude/output-styles/traffic-teacher.md).

@@ -92,6 +92,51 @@ export const parseFullList = (reply: string): Item[] | null => {
   return items.length > 0 ? items : null
 }
 
+// The one-line form between full lists: `⏳ +new item · ✓#3 done · ✓text of an item with no number yet`.
+// `+` opens an item, `✓#N` closes item N, `✓text` closes an item by its wording.
+export type Delta = { add: string[]; closeN: number[]; closeText: string[] }
+export const parseDelta = (reply: string): Delta | null => {
+  const line = reply
+    .split('\n')
+    .map(l => plain(l).trim())
+    .filter(l => l.startsWith('⏳'))
+    .pop()
+  const body = line?.slice('⏳'.length).trim() ?? ''
+  if (!/^[+✓]/.test(body)) return null // a list header, or prose
+
+  const d: Delta = { add: [], closeN: [], closeText: [] }
+  for (const part of body.split(/\s+·\s+/)) {
+    const n = /^✓\s*#(\d+)\b/.exec(part)
+    if (n) d.closeN.push(Number(n[1]))
+    else if (part.startsWith('+')) d.add.push(oneLine(part.slice(1), 80))
+    else if (part.startsWith('✓')) d.closeText.push(oneLine(part.slice(1), 80))
+  }
+  d.add = d.add.filter(Boolean)
+  d.closeText = d.closeText.filter(Boolean)
+
+  return d
+}
+
+// ponytail: "same wording" = equal, or one starts with the other; anything looser is left to the model.
+const isSameText = (a: string, b: string) => {
+  const [x, y] = [a.toLowerCase(), b.toLowerCase()]
+
+  return x === y || (Math.min(x.length, y.length) >= 8 && (x.startsWith(y) || y.startsWith(x)))
+}
+
+// Applies a delta in code: exact, no model. `unresolved` = closes by wording that matched no item.
+export const applyDelta = (old: Item[], nextN: number, d: Delta): { pending: Item[]; nextN: number; unresolved: string[] } => {
+  let kept = old.filter(i => !d.closeN.includes(i.n))
+  const unresolved: string[] = []
+  for (const text of d.closeText) {
+    const hit = kept.find(i => isSameText(i.text, text))
+    if (hit) kept = kept.filter(i => i !== hit)
+    else unresolved.push(text)
+  }
+
+  return { ...mergePending(kept, Math.max(nextN, ...old.map(i => i.n + 1)), [...kept, ...d.add.map(text => ({ n: null, text }))]), unresolved }
+}
+
 // Worth a model call only when the reply talks about open work, or the goal is still missing.
 export const hasSignal = (reply: string) => /⏳|👉/.test(reply)
 export const shouldSkip = (reply: string, goal: string) => !hasSignal(reply) && real(goal) !== ''
@@ -111,7 +156,7 @@ export const buildPrompt = (c: { goal: string; now: string; pending: Item[]; pro
     'Assistant replies since the card was last updated, oldest first:\n' +
     `${c.replies.map(r => `<reply>\n${r}\n</reply>`).join('\n')}\n\n` +
     'Update the card. In a reply, a line starting with ⏳ lists changes to the pending items: ' +
-    '"+text" opens an item, "✓N" or "✓text" closes one. Close an item only when a reply says it is done or dropped.\n' +
+    '"+text" opens an item, "✓#N" or "✓text" closes one. Close an item only when a reply says it is done or dropped.\n' +
     'Reply in exactly this shape:\n' +
     'GOAL_CHANGED: <yes only if the latest user request states a new purpose for the whole session, else no>\n' +
     'GOAL: <the purpose of this session, one line>\n' +
