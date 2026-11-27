@@ -28,7 +28,7 @@ Tested on Linux. macOS should work; Windows is not tested.
 
 ## Managed machines
 
-If a managed-settings file exists (for example `/etc/claude-code/managed-settings.json`), Claude Code seats the built-in `cc-plugin-sec-default` plugin first. It skips some events for installed mods: `session.append` (so `secret-mask` and `prompt-index` miss hook, attachment and compaction rows) and `prompt.compose` (`session-board`). Claude Code prints a "hook was skipped" notice once per mod per session. Disabling the built-in plugin in settings does not change this (tested on 2.1.332).
+If a managed-settings file exists (for example `/etc/claude-code/managed-settings.json`), Claude Code seats the built-in `cc-plugin-sec-default` plugin first. It skips some events for installed mods: `session.append` (so `secret-mask` misses hook, attachment and compaction rows; `prompt-index` is not affected, tested: it still lists every typed prompt) and `prompt.compose` (`session-board`). Claude Code prints a "hook was skipped" notice once per mod per session. Disabling the built-in plugin in settings does not change this (tested on 2.1.332).
 
 ## License
 
