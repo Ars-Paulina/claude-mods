@@ -94,10 +94,11 @@ export const parseFullList = (reply: string): Item[] | null => {
   return items.length > 0 ? items : null
 }
 
-// A delta, the one-line form between full lists: `⏳ +#7 new item · ✓#3 what was done`.
-// `+#N text` opens item N (Claude picks the next free number), `✓#N` closes item N.
+// A delta, the one-line form between full lists: `⏳ +#7 new item · ✓#3 what was done · ~#2 new wording`.
+// `+#N text` opens item N (Claude picks the next free number), `✓#N` closes item N,
+// `~#N text` rewords open item N (keeps its number).
 // Also read: `+text` (code picks the number) and `✓text` (close by wording).
-export type Delta = { add: { n: number | null; text: string }[]; closeN: number[]; closeText: string[] }
+export type Delta = { add: { n: number | null; text: string }[]; closeN: number[]; closeText: string[]; reword: { n: number; text: string }[] }
 export const parseDelta = (reply: string): Delta | null => {
   const line = reply
     .split('\n')
@@ -105,18 +106,21 @@ export const parseDelta = (reply: string): Delta | null => {
     .filter(l => l.startsWith('⏳'))
     .pop()
   const body = line?.slice('⏳'.length).trim() ?? ''
-  if (!/^[+✓]/.test(body)) return null // a list header, or prose
+  if (!/^[+✓~]/.test(body)) return null // a list header, or prose
 
-  const d: Delta = { add: [], closeN: [], closeText: [] }
+  const d: Delta = { add: [], closeN: [], closeText: [], reword: [] }
   for (const part of body.split(/\s+·\s+/)) {
     const close = /^✓\s*#(\d+)\b/.exec(part)
     const open = /^\+\s*(?:#(\d+)\s+)?(.+)/.exec(part)
+    const reword = /^~\s*#(\d+)\s+(.+)/.exec(part)
     if (close) d.closeN.push(Number(close[1]))
+    else if (reword) d.reword.push({ n: Number(reword[1]), text: oneLine(reword[2]!, 80) })
     else if (open) d.add.push({ n: open[1] ? Number(open[1]) : null, text: oneLine(open[2], 80) })
     else if (part.startsWith('✓')) d.closeText.push(oneLine(part.slice(1), 80))
   }
   d.add = d.add.filter(a => a.text !== '')
   d.closeText = d.closeText.filter(Boolean)
+  d.reword = d.reword.filter(r => r.text !== '')
 
   return d
 }
@@ -130,6 +134,8 @@ const isSameText = (a: string, b: string) => {
 }
 
 // Applies a delta exactly. `unresolved` = closes that matched no item on the card.
+// A reword of an unknown number is unresolved; one for an item closed in the same line is dropped
+// (either order); one that would copy another open item's wording is ignored, so no two items match.
 // Claude's number for a new item is kept unless the card already uses it: the two
 // must agree on numbers, or a later `✓#N` would close the wrong item.
 export const applyDelta = (old: Item[], nextN: number, d: Delta): { pending: Item[]; nextN: number; unresolved: string[] } => {
@@ -139,6 +145,12 @@ export const applyDelta = (old: Item[], nextN: number, d: Delta): { pending: Ite
     const hit = pending.find(i => isSameText(i.text, text))
     if (hit) pending = pending.filter(i => i !== hit)
     else unresolved.push(text)
+  }
+
+  for (const r of d.reword) {
+    if (!old.some(i => i.n === r.n)) unresolved.push(`~#${r.n}`)
+    else if (!pending.some(i => i.text.toLowerCase() === r.text.toLowerCase()))
+      pending = pending.map(i => (i.n === r.n ? { ...i, text: r.text } : i))
   }
 
   let next = Math.max(nextN, 1, ...old.map(i => i.n + 1))

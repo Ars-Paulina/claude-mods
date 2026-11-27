@@ -31,6 +31,7 @@ test('parseDelta reads opens and closes; a full list or prose is not a delta', a
     ],
     closeN: [2],
     closeText: ['write tests for the parser', '3 PRs merged'], // "✓3 PRs merged" has no #: wording, not item 3
+    reword: [],
   })
 })
 
@@ -49,6 +50,7 @@ test('applyDelta: numbered opens and closes are exact; code picks a number only 
     ],
     closeN: [2],
     closeText: ['write tests for the parser', 'something never on the card'],
+    reword: [],
   })
   expect(r.pending).toEqual([
     { n: 3, text: 'call the bank' },
@@ -58,12 +60,43 @@ test('applyDelta: numbered opens and closes are exact; code picks a number only 
   ])
   expect(r.nextN).toBe(10)
   expect(r.unresolved).toEqual(['something never on the card'])
-  expect(applyDelta(old, 4, { add: [], closeN: [9], closeText: [] })).toEqual({ pending: old, nextN: 4, unresolved: ['#9'] })
+  expect(applyDelta(old, 4, { add: [], closeN: [9], closeText: [], reword: [] })).toEqual({ pending: old, nextN: 4, unresolved: ['#9'] })
+})
+
+test('parseDelta reads a reword-only line, one or several ~#N', async () => {
+  expect(parseDelta('⏳ ~#3 CLAUDE.md learner, 3 queued sessions')!).toEqual({ add: [], closeN: [], closeText: [], reword: [{ n: 3, text: 'CLAUDE.md learner, 3 queued sessions' }] })
+  expect(parseDelta('⏳ ~#1 a new · ~#2 b new')!.reword).toEqual([{ n: 1, text: 'a new' }, { n: 2, text: 'b new' }])
+  expect(parseDelta('⏳ ~no number')).toEqual({ add: [], closeN: [], closeText: [], reword: [] }) // no #N: not a reword
+})
+
+test('applyDelta ~#N: reword keeps the number; unknown N is unresolved; close+reword either order; duplicates', async () => {
+  const old = [
+    { n: 1, text: 'Learner queue cleanup' },
+    { n: 2, text: 'push the branch' },
+  ]
+  const none = { add: [], closeN: [], closeText: [] }
+  const at = (d: string) => applyDelta(old, 3, parseDelta(d)!)
+  // b: text changes, number stays
+  expect(applyDelta(old, 3, { ...none, reword: [{ n: 1, text: 'CLAUDE.md learner, 3 queued' }] })).toEqual({
+    pending: [{ n: 1, text: 'CLAUDE.md learner, 3 queued' }, old[1]],
+    nextN: 3,
+    unresolved: [],
+  })
+  // c: unknown N
+  expect(applyDelta(old, 3, { ...none, reword: [{ n: 9, text: 'x' }] })).toEqual({ pending: old, nextN: 3, unresolved: ['~#9'] })
+  // d: closed in the same line, both orders: closed, not resurrected, nothing unresolved
+  for (const line of ['⏳ ~#1 new words · ✓#1', '⏳ ✓#1 · ~#1 new words']) {
+    expect(at(line)).toEqual({ pending: [old[1]], nextN: 3, unresolved: [] })
+  }
+  // e: copying ANOTHER open item's wording (any case) is ignored: both items stay as they were
+  expect(at('⏳ ~#1 Push The Branch').pending).toEqual(old)
+  // e: rewording to its own text is a no-op
+  expect(at('⏳ ~#2 push the branch').pending).toEqual(old)
 })
 
 test('applyDelta keeps at most 12 items', async () => {
   const many = Array.from({ length: 12 }, (_, i) => ({ n: i + 1, text: `item ${i + 1}` }))
-  const r = applyDelta(many, 13, { add: [{ n: 13, text: 'one more' }], closeN: [], closeText: [] })
+  const r = applyDelta(many, 13, { add: [{ n: 13, text: 'one more' }], closeN: [], closeText: [], reword: [] })
   expect(r.pending.length).toBe(12)
   expect(r.pending[11]).toEqual({ n: 13, text: 'one more' })
 })
