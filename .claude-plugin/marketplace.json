@@ -6,6 +6,13 @@
   },
   "plugins": [
     {
+      "name": "dispatch-router",
+      "source": "./plugins/dispatch-router",
+      "description": "Hands the model plan-verify and pending-review notices that other background jobs left behind, with your next prompt",
+      "version": "0.1.0"
+    },
+
+    {
       "name": "flow-board",
       "source": "./plugins/flow-board",
       "description": "One line above the prompt: background agents, git dirty/ahead, PR checks, GSD state and whether /clear is safe. Adds /park and a one-press GSD phase handoff button.",
