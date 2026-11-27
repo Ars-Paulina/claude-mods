@@ -42,6 +42,8 @@ jobs:
             echo "::endgroup::"
           done
           exit "$failed"
+      - name: session-board's secret detector matches prompt-secret-screen's
+        run: cmp plugins/prompt-secret-screen/hooks/detect.ts plugins/session-board/hooks/detect.ts
       - name: Test session-overseer scripts (node --test)
         run: node --test 'plugins/session-overseer/scripts/*.test.cjs'
 
