@@ -1,0 +1,18 @@
+{
+  "name": "notify-sound",
+  "version": "0.1.0",
+  "description": "Plays a short tone when Claude asks you a question (AskUserQuestion)",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "license": "MIT",
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Notify sound",
+      "description": "Kill switch. Off registers nothing and plays nothing.",
+      "default": true
+    }
+  },
+  "repository": "https://github.com/Ars-Paulina/claude-mods"
+}
