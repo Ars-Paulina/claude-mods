@@ -33,7 +33,7 @@
       "name": "prompt-index",
       "source": "./plugins/prompt-index",
       "description": "A pane listing your prompts; Enter scrolls the chat to that prompt",
-      "version": "0.1.0"
+      "version": "0.1.1"
     },
     {
       "name": "prompt-secret-screen",
