@@ -3,7 +3,7 @@
 Replaces secrets with `[MASKED:<label>]` before they are stored. It works in two places:
 
 - **The tool's result** (`tool.call`): the tool's structured record, the copy the transcript keeps as `toolUseResult` (Bash `stdout`/`stderr`, a Read's file text, an MCP result). The engine re-maps the masked record for the model. An errored call (non-zero exit, a failed `psql` printing a DSN) is answered with its masked error text, so the model still reads the error. Both the error text and the stored error result are scanned (a non-string result, such as blocks or an object, is masked deep and sent as JSON), and the longer masked one is sent.
-- **Every stored row** (`session.append`): tool results, hook context, attachments, deliveries, notes, compaction summaries, notices, `!` command output and the model's own replies.
+- **Every stored row** (`session.append`): tool results, hook context, attachments, deliveries, notes, compaction summaries, notices, `!` command output and the model's own replies. Not true on a machine with a managed-settings file: see Known gaps.
 
 ## Install
 
@@ -28,6 +28,7 @@ The hook sees only `PostToolUse`, so only tool output. The mod also masks `hook-
 
 ## Known gaps
 
+- **Managed-settings machines**: if `/etc/claude-code/managed-settings.json` (or another managed-settings file) exists, Claude Code seats the built-in `cc-plugin-sec-default` plugin outermost, and it sends some `session.append` events past every installed mod. Hook context, hook messages, engine attachments and the compaction summary then reach the model and the transcript unmasked, and Claude Code prints "its session.append hook was skipped" once per session. Setting `cc-plugin-sec-default@builtin` to `false` does not undo it (tested on 2.1.332). Cover the gap by masking in the hook's own output, or by scrubbing the transcript when the session ends. Tool results (`tool.call`) are not affected.
 - **`prompt` and `queue` doors are not masked**: that is the person's own typing. `prompt-secret-screen` only warns about it after the fact; it does not mask either.
 - **Pinned blocks**: at the top level of a row the engine puts back every block that is not text or a tool_result (thinking, tool_use, a top-level `search_result`), whatever a hook does. A secret there, such as one in the model's thinking, is not masked.
 - **Base64 is not scanned**: a secret inside a PDF's bytes is not masked (scanning would corrupt the file).
