@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import { fit, isTyped, label, rebuild } from './index'
+import { addLive, fit, isTyped, label, rebuild } from './index'
 
 const PANE = 'prompt-index'
 const CAP = 4096
@@ -41,12 +41,17 @@ export const register: Register = (on, options) => {
 
   on('session.append', async ($, e, next) => {
     const kind = (e.origin as any)?.kind
+    const text = textOf(e.message.content)
+    // A prompt typed while Claude is busy shows up at the queue door (origin engine), and as a normal row only when
+    // it is not folded into the running turn. Engine-made queue rows are told apart by their text, as in backfill.
+    const queued = e.door === 'queue' && isTyped(text)
+    const typed = (e.door === 'prompt' || e.door === 'command') && (kind === 'composer' || kind === 'bridge')
     // A failure here must never block the prompt from being stored, so errors only log.
-    if (!e.agentId && (e.door === 'prompt' || e.door === 'command') && (kind === 'composer' || kind === 'bridge')) try {
+    if (!e.agentId && (queued || typed)) try {
       const pos = (await read($, counter)) + 1
       await update($, counter, () => pos)
-      const row = { uuid: e.uuid, label: label(textOf(e.message.content), e.door), pos }
-      await update($, items, list => rebuild(list.filter(i => i.pos < 0), [...list.filter(i => i.pos > 0), row]))
+      const row = { uuid: e.uuid, label: label(text, e.door), pos }
+      await update($, items, list => rebuild(list.filter(i => i.pos < 0), addLive(list.filter(i => i.pos > 0), row, queued)))
     } catch (err) {
       $.ui.log(`prompt-index: append failed: ${String(err)}`)
     }

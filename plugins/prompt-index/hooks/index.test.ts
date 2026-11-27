@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { fit, isTyped, label, rebuild } from './index'
+import { addLive, fit, isTyped, label, rebuild } from './index'
 
 test('label: slash command as /name args, first line only', async () => {
   expect(label('/review i want a mod\nmore', 'command')).toBe('/review i want a mod')
@@ -29,4 +29,15 @@ test('fit cuts to the width with an ellipsis', async () => {
   expect(s.length).toBe(40)
   expect(s.endsWith('…')).toBe(true)
   expect(fit('short', 40)).toBe('short')
+})
+
+test('addLive: a queued prompt is added once, and a normal row with the same label takes its place', async () => {
+  const q = (uuid: string, pos: number) => addLive([], { uuid, label: 'two', pos }, true)
+  expect(q('q1', 1)).toEqual([{ uuid: 'q1', label: 'two', pos: 1, queued: true }])
+  // the remove record repeats the enqueue text: no second row
+  expect(addLive(q('q1', 1), { uuid: 'q2', label: 'two', pos: 2 }, true)).toEqual(q('q1', 1))
+  // the dequeued prompt comes back as a normal row: same slot, real uuid, no queued flag
+  expect(addLive(q('q1', 1), { uuid: 'u9', label: 'two', pos: 3 }, false)).toEqual([{ uuid: 'u9', label: 'two', pos: 1 }])
+  // a normal row with no queued twin is just appended
+  expect(addLive(q('q1', 1), { uuid: 'u9', label: 'other', pos: 3 }, false).map(i => i.label)).toEqual(['two', 'other'])
 })

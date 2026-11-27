@@ -10,4 +10,4 @@ A pane listing every prompt you sent in this session. Pick one and press Enter t
 
 ## Use
 
-Type `/prompts` to open the pane. Arrow keys move, Enter jumps, Esc goes back to typing (the pane stays open). New prompts appear while it is open. Very long sessions may show "Older prompts may not be reachable" when the list hits its size cap.
+Type `/prompts` to open the pane. Arrow keys move, Enter jumps, Esc goes back to typing (the pane stays open). New prompts appear while it is open. Prompts typed while Claude is busy are listed too; one that Claude folds into its running turn has no row to jump to (you get a toast), and is not restored after a resume. Very long sessions may show "Older prompts may not be reachable" when the list hits its size cap.
