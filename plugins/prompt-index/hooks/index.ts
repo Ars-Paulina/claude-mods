@@ -43,6 +43,17 @@ export function rebuild(backfill: Item[], live: Item[]): Item[] {
   return [...backfill, ...live.filter(i => !seen.has(i.uuid))].sort((a, b) => a.pos - b.pos)
 }
 
+// The queue door raises a prompt typed while Claude is busy twice (enqueue, then remove) under throwaway uuids.
+// A prompt that later arrives as a normal row takes the queued row's place and its real uuid, so the jump works.
+// ponytail: matches on the label, so two identical prompts typed while busy show as one row. Key on queue-record ids if that bites.
+export function addLive(list: Item[], row: Item, queued: boolean): Item[] {
+  const at = list.findIndex(i => i.queued && i.label === row.label)
+  if (queued) return at >= 0 ? list : [...list, { ...row, queued: true }]
+  if (at < 0) return [...list, row]
+
+  return list.map((i, n) => (n === at ? { uuid: row.uuid, label: row.label, pos: i.pos } : i))
+}
+
 export function fit(text: string, cols: number): string {
   const max = Math.max(1, cols)
 

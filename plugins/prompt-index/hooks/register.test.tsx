@@ -59,13 +59,27 @@ test('backfill comes first, a live prompt sent before backfill still sorts last,
   await ui2.unmount()
 })
 
-test('queue door and task notifications add no row', async ($, on) => {
+test('queue door: engine text and task notifications add no row', async ($, on) => {
   engine(on)
   await start($)
-  await send($, 'q1', 'queued', 'queue')
+  await send($, 'q1', '<task-notification>done</task-notification>', 'queue', 'engine')
   await send($, 't1', 'note', 'prompt', 'task-notification')
   const ui = await $.ui.mount(PANE as any)
   expect(await buttons(ui)).toEqual([])
+  await ui.unmount()
+})
+
+test('a prompt typed while busy is listed once; if it comes back as a normal row it keeps its slot', async ($, on) => {
+  engine(on)
+  await start($)
+  await send($, 'u1', 'first')
+  await send($, 'q1', 'folded', 'queue', 'engine')
+  await send($, 'q2', 'folded', 'queue', 'engine') // remove record, same text
+  await send($, 'q3', 'later', 'queue', 'engine')
+  await send($, 'q4', 'later', 'queue', 'engine')
+  await send($, 'u2', 'later') // the dequeued one becomes a normal turn
+  const ui = await $.ui.mount(PANE as any)
+  expect(await buttons(ui)).toEqual(['1  first', '2  folded', '3  later'])
   await ui.unmount()
 })
 
