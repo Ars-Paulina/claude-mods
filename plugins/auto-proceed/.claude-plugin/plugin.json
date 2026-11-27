@@ -1,0 +1,19 @@
+{
+  "name": "auto-proceed",
+  "version": "0.1.0",
+  "description": "When a reply ends by offering a safe next step (\"say go and I'll run it\", a menu with a ← pick), tells Claude to do it instead of waiting",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "userConfig": {
+    "mode": {
+      "type": "string",
+      "title": "Auto-proceed mode",
+      "description": "on: Claude keeps going. warn: only a toast and a log line saying it would have. off: nothing runs.",
+      "options": ["on", "warn", "off"],
+      "default": "on"
+    }
+  },
+  "license": "MIT",
+  "repository": "https://github.com/Ars-Paulina/claude-mods"
+}
