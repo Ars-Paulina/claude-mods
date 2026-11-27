@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import { addLive, fit, isTyped, label, rebuild } from './index'
+import { addLive, fit, isBusyTyped, isTyped, label, rebuild } from './index'
 
 const PANE = 'prompt-index'
 const CAP = 4096
@@ -39,19 +39,29 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('session.append', async ($, e, next) => {
-    const kind = (e.origin as any)?.kind
-    const text = textOf(e.message.content)
-    // A prompt typed while Claude is busy shows up at the queue door (origin engine), and as a normal row only when
-    // it is not folded into the running turn. Engine-made queue rows are told apart by their text, as in backfill.
-    const queued = e.door === 'queue' && isTyped(text)
-    const typed = (e.door === 'prompt' || e.door === 'command') && (kind === 'composer' || kind === 'bridge')
-    // A failure here must never block the prompt from being stored, so errors only log.
-    if (!e.agentId && (queued || typed)) try {
+  // Typed while Claude is busy: the only event that fires once per such prompt, whether it is folded into the running
+  // turn or waits for its own. The queue door is no use: it repeats the text (enqueue, remove) with nothing to tell them apart.
+  on('prompt.submit', async ($, e, next) => {
+    if (isBusyTyped(e)) try {
       const pos = (await read($, counter)) + 1
       await update($, counter, () => pos)
-      const row = { uuid: e.uuid, label: label(text, e.door), pos }
-      await update($, items, list => rebuild(list.filter(i => i.pos < 0), addLive(list.filter(i => i.pos > 0), row, queued)))
+      const row = { uuid: `queued-${pos}`, label: label(e.text), pos }
+      await update($, items, list => rebuild(list.filter(i => i.pos < 0), addLive(list.filter(i => i.pos > 0), row, true)))
+    } catch (err) {
+      $.ui.log(`prompt-index: queued append failed: ${String(err)}`)
+    }
+
+    return next(e)
+  })
+
+  on('session.append', async ($, e, next) => {
+    const kind = (e.origin as any)?.kind
+    // A failure here must never block the prompt from being stored, so errors only log.
+    if (!e.agentId && (e.door === 'prompt' || e.door === 'command') && (kind === 'composer' || kind === 'bridge')) try {
+      const pos = (await read($, counter)) + 1
+      await update($, counter, () => pos)
+      const row = { uuid: e.uuid, label: label(textOf(e.message.content), e.door), pos }
+      await update($, items, list => rebuild(list.filter(i => i.pos < 0), addLive(list.filter(i => i.pos > 0), row, false)))
     } catch (err) {
       $.ui.log(`prompt-index: append failed: ${String(err)}`)
     }
