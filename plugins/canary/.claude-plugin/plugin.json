@@ -1,0 +1,36 @@
+{
+  "name": "canary",
+  "version": "0.1.0",
+  "description": "Context-rot heartbeat: asks Claude to end each reply with a secret footer and warns when it keeps dropping or garbling it",
+  "author": {
+    "name": "Pedro Malla"
+  },
+  "license": "MIT",
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Canary heartbeat",
+      "description": "Kill switch. Off registers nothing and runs nothing.",
+      "default": true
+    },
+    "window": {
+      "type": "number",
+      "title": "Window size",
+      "description": "How many recent substantive replies are scored.",
+      "default": 10
+    },
+    "missRate": {
+      "type": "number",
+      "title": "Alert miss rate",
+      "description": "Share of a full window that must miss the footer before the alert fires (0 to 1).",
+      "default": 0.8
+    },
+    "minProse": {
+      "type": "number",
+      "title": "Low-signal length",
+      "description": "Replies with less prose than this (code blocks removed) are not scored.",
+      "default": 40
+    }
+  },
+  "repository": "https://github.com/Ars-Paulina/claude-mods"
+}
