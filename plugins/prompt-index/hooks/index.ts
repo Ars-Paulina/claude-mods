@@ -43,15 +43,22 @@ export function rebuild(backfill: Item[], live: Item[]): Item[] {
   return [...backfill, ...live.filter(i => !seen.has(i.uuid))].sort((a, b) => a.pos - b.pos)
 }
 
-// The queue door raises a prompt typed while Claude is busy twice (enqueue, then remove) under throwaway uuids.
-// A prompt that later arrives as a normal row takes the queued row's place and its real uuid, so the jump works.
-// ponytail: matches on the label, so two identical prompts typed while busy show as one row. Key on queue-record ids if that bites.
-export function addLive(list: Item[], row: Item, queued: boolean): Item[] {
-  const at = list.findIndex(i => i.queued && i.label === row.label)
-  if (queued) return at >= 0 ? list : [...list, { ...row, queued: true }]
-  if (at < 0) return [...list, row]
+// A prompt the person typed while Claude was busy: prompt.submit carries the running turn's id only then.
+export function isBusyTyped(e: { text: string; turnId?: string; isMeta?: true; command?: unknown; origin: { kind: string } }): boolean {
+  return !!e.turnId && !e.isMeta && !e.command && (e.origin.kind === 'composer' || e.origin.kind === 'bridge') && isTyped(e.text)
+}
 
-  return list.map((i, n) => (n === at ? { uuid: row.uuid, label: row.label, pos: i.pos } : i))
+// A busy-typed prompt is listed at once under a throwaway uuid (queued). The queue hands them over in order: one that
+// Claude folds into its running turn never gets a row of its own, one that waits comes back later as a normal row.
+// So a normal row takes the oldest queued row with its label, and whatever queued before that one was folded (settled).
+// With no match the queue was empty, so everything queued is settled.
+// ponytail: a folded prompt typed again word for word as the very next prompt shows once. Needs queue-record ids to tell apart.
+export function addLive(list: Item[], row: Item, queued: boolean): Item[] {
+  if (queued) return [...list, { ...row, queued: true }]
+  const at = list.findIndex(i => i.queued && i.label === row.label)
+  const settled = list.map((i, n) => (i.queued && (at < 0 || n < at) ? { uuid: i.uuid, label: i.label, pos: i.pos } : i))
+
+  return at < 0 ? [...settled, row] : settled.map((i, n) => (n === at ? { uuid: row.uuid, label: row.label, pos: i.pos } : i))
 }
 
 export function fit(text: string, cols: number): string {

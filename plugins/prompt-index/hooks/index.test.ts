@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { addLive, fit, isTyped, label, rebuild } from './index'
+import { addLive, fit, isBusyTyped, isTyped, label, rebuild } from './index'
 
 test('label: slash command as /name args, first line only', async () => {
   expect(label('/review i want a mod\nmore', 'command')).toBe('/review i want a mod')
@@ -31,13 +31,34 @@ test('fit cuts to the width with an ellipsis', async () => {
   expect(fit('short', 40)).toBe('short')
 })
 
-test('addLive: a queued prompt is added once, and a normal row with the same label takes its place', async () => {
-  const q = (uuid: string, pos: number) => addLive([], { uuid, label: 'two', pos }, true)
-  expect(q('q1', 1)).toEqual([{ uuid: 'q1', label: 'two', pos: 1, queued: true }])
-  // the remove record repeats the enqueue text: no second row
-  expect(addLive(q('q1', 1), { uuid: 'q2', label: 'two', pos: 2 }, true)).toEqual(q('q1', 1))
-  // the dequeued prompt comes back as a normal row: same slot, real uuid, no queued flag
-  expect(addLive(q('q1', 1), { uuid: 'u9', label: 'two', pos: 3 }, false)).toEqual([{ uuid: 'u9', label: 'two', pos: 1 }])
-  // a normal row with no queued twin is just appended
-  expect(addLive(q('q1', 1), { uuid: 'u9', label: 'other', pos: 3 }, false).map(i => i.label)).toEqual(['two', 'other'])
+const it = (uuid: string, label: string, pos: number, queued?: true) => (queued ? { uuid, label, pos, queued } : { uuid, label, pos })
+
+test('isBusyTyped: only a person-typed prompt sent over a running turn', async () => {
+  const e = { text: 'hi', turnId: 't1', origin: { kind: 'composer' } }
+  expect(isBusyTyped(e)).toBe(true)
+  expect(isBusyTyped({ ...e, origin: { kind: 'bridge' } })).toBe(true)
+  expect(isBusyTyped({ ...e, turnId: undefined })).toBe(false) // idle prompt
+  expect(isBusyTyped({ ...e, origin: { kind: 'plugin' } })).toBe(false)
+  expect(isBusyTyped({ ...e, isMeta: true })).toBe(false)
+  expect(isBusyTyped({ ...e, command: { name: 'x' } })).toBe(false)
+  expect(isBusyTyped({ ...e, text: '<task-notification>x</task-notification>' })).toBe(false)
+})
+
+test('addLive: two identical busy-typed prompts are two rows', async () => {
+  const two = addLive(addLive([], it('queued-1', 'same', 1), true), it('queued-2', 'same', 2), true)
+  expect(two).toEqual([it('queued-1', 'same', 1, true), it('queued-2', 'same', 2, true)])
+})
+
+test('addLive: a normal row takes the oldest queued row with its label; earlier queued rows were folded and settle', async () => {
+  const q = [it('queued-1', 'a', 1, true), it('queued-2', 'b', 2, true), it('queued-3', 'b', 3, true)]
+  // b waits its turn: a was folded (settles, keeps its row), the first b gets the real uuid, the second b stays queued
+  expect(addLive(q, it('u9', 'b', 4), false)).toEqual([it('queued-1', 'a', 1), it('u9', 'b', 2), it('queued-3', 'b', 3, true)])
+  // the head matches: nothing settles
+  expect(addLive(q, it('u9', 'a', 4), false)).toEqual([it('u9', 'a', 1), it('queued-2', 'b', 2, true), it('queued-3', 'b', 3, true)])
+})
+
+test('addLive: a normal row with no queued twin appends and settles everything queued', async () => {
+  const q = [it('queued-1', 'a', 1, true)]
+  expect(addLive(q, it('u9', 'idle', 2), false)).toEqual([it('queued-1', 'a', 1), it('u9', 'idle', 2)])
+  expect(addLive([], it('u9', 'idle', 1), false)).toEqual([it('u9', 'idle', 1)])
 })
